@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 # Ensure project root is in the path for absolute imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
+from src.models.schemas import EnrichmentResult
 from src.reconciler import get_pending_queue, transition_status
 from src.utils.db import get_connection
 
@@ -103,7 +104,7 @@ def extract_instagram_from_spotify(artist_id):
         from playwright.sync_api import sync_playwright
     except ImportError:
         logger.warning("⚠️ playwright is not installed. Skipping Spotify page crawl.")
-        return {"instagram_url": None, "monthly_listeners": None, "max_song_streams": 0}
+        return EnrichmentResult(instagram_url=None, monthly_listeners=None, max_song_streams=0)
 
     # Ensure Playwright respects the environment variable for storage redirection
     browsers_path = os.getenv("PLAYWRIGHT_BROWSERS_PATH")
@@ -141,51 +142,57 @@ def extract_instagram_from_spotify(artist_id):
         except Exception:
             pass
 
+    browser = None
     try:
         logger.info(f"🕸️ Launching Playwright to crawl Spotify Artist page for ID: {artist_id}...")
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
-            page = context.new_page()
-            page.on("response", handle_response)
-            
-            # Navigate to artist page
-            page.goto(url, timeout=20000, wait_until="domcontentloaded")
-            
-            # Scroll down to load "About" section and trigger GraphQL playcount requests
-            for _ in range(3):
-                page.mouse.wheel(0, 2000)
-                time.sleep(2.0)
+            try:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context()
+                page = context.new_page()
+                page.on("response", handle_response)
                 
-            content = page.content()
-            
-            # Fallback parsing on HTML content for Instagram links
-            if not found_links:
-                matches = INSTAGRAM_REGEX.findall(content)
-                for handle in matches:
-                    match = f"https://www.instagram.com/{handle}"
-                    if match not in found_links:
-                        match_lower = match.lower()
-                        if "instagram.com/spotify" not in match_lower and "instagram.com/accounts" not in match_lower:
-                            found_links.append(match)
+                # Navigate to artist page
+                page.goto(url, timeout=20000, wait_until="domcontentloaded")
+                
+                # Scroll down to load "About" section and trigger GraphQL playcount requests
+                for _ in range(3):
+                    page.mouse.wheel(0, 2000)
+                    time.sleep(2.0)
+                    
+                content = page.content()
+                
+                # Fallback parsing on HTML content for Instagram links
+                if not found_links:
+                    matches = INSTAGRAM_REGEX.findall(content)
+                    for handle in matches:
+                        match = f"https://www.instagram.com/{handle}"
+                        if match not in found_links:
+                            match_lower = match.lower()
+                            if "instagram.com/spotify" not in match_lower and "instagram.com/accounts" not in match_lower:
+                                found_links.append(match)
+                                
+                # Fallback parsing on HTML content for Monthly Listeners
+                if not monthly_listeners:
+                    ml_match = re.search(r'([\d,.]+)\s*(?:monthly listeners|ouvintes mensais)', content, re.IGNORECASE)
+                    if ml_match:
+                        try:
+                            listeners_str = ml_match.group(1).replace(",", "").replace(".", "")
+                            monthly_listeners = int(listeners_str)
+                            logger.info(f"📊 Extracted HTML Monthly Listeners: {monthly_listeners:,}")
+                        except (ValueError, TypeError):
+                            pass
                             
-            # Fallback parsing on HTML content for Monthly Listeners
-            if not monthly_listeners:
-                ml_match = re.search(r'([\d,.]+)\s*(?:monthly listeners|ouvintes mensais)', content, re.IGNORECASE)
-                if ml_match:
+                # Fallback parsing on HTML for play counts
+                for count_str in re.findall(r'"playcount":\s*"?(\d+)"?', content, re.IGNORECASE):
                     try:
-                        listeners_str = ml_match.group(1).replace(",", "").replace(".", "")
-                        monthly_listeners = int(listeners_str)
-                        logger.info(f"📊 Extracted HTML Monthly Listeners: {monthly_listeners:,}")
-                    except Exception:
+                        play_counts.append(int(count_str))
+                    except (ValueError, TypeError):
                         pass
-                        
-            # Fallback parsing on HTML for play counts
-            for count_str in re.findall(r'"playcount":\s*"?(\d+)"?', content, re.IGNORECASE):
-                play_counts.append(int(count_str))
+            finally:
+                if browser:
+                    browser.close()
                 
-            browser.close()
-            
         if found_links:
             instagram_url = found_links[0]
             logger.info(f"✨ Playwright found Instagram URL: {instagram_url}")
@@ -197,11 +204,11 @@ def extract_instagram_from_spotify(artist_id):
     if max_streams > 0:
         logger.info(f"📊 Extracted Spotify play counts: Max track streams = {max_streams:,}")
         
-    return {
-        "instagram_url": instagram_url,
-        "monthly_listeners": monthly_listeners,
-        "max_song_streams": max_streams
-    }
+    return EnrichmentResult(
+        instagram_url=instagram_url,
+        monthly_listeners=monthly_listeners,
+        max_song_streams=max_streams
+    )
 
 def find_instagram_via_search(artist_name):
     """

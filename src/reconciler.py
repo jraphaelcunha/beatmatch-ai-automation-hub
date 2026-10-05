@@ -1,3 +1,4 @@
+import hashlib
 import os
 import sys
 
@@ -48,8 +49,8 @@ def insert_discovered_lead(name, spotify_id=None, spotify_url=None, instagram_ur
             RETURNING spotify_id, status;
         """
         
-        # If spotify_id is missing, generate a temporary hash identifier for database constraint
-        actual_id = spotify_id if spotify_id else f"temp_{hash(name + source) & 0xffffffff}"
+        # Generate deterministic temporary identifier for database uniqueness constraint
+        actual_id = spotify_id if spotify_id else f"temp_{hashlib.md5(f'{name}:{source}'.encode('utf-8')).hexdigest()[:12]}"
         
         cursor.execute(query, (
             actual_id, name, spotify_url, instagram_url, twitter_url, youtube_channel, status, source

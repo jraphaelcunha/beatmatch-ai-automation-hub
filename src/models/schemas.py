@@ -1,16 +1,31 @@
-﻿"""
+"""
 Data contracts and schema definitions for BeatMatch AI Automation Hub.
 Enforces validation and serialization across scrapers, enrichers, and quality engines using Pydantic v2.
 """
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class ArtistRecord(BaseModel):
-    """Normalized artist entity extracted from Spotify / streaming platforms."""
+class StrictBaseSchema(BaseModel):
+    """Base schema enforcing strict type validation and prohibiting extra fields."""
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Compatibility accessor supporting dictionary-style lookups."""
+        return getattr(self, key, default)
+
+    def __getitem__(self, item: str) -> Any:
+        """Compatibility accessor supporting key indexing."""
+        if hasattr(self, item):
+            return getattr(self, item)
+        raise KeyError(item)
+
+
+class ArtistRecord(StrictBaseSchema):
+    """Normalized artist entity extracted from Spotify and streaming platforms."""
     spotify_id: str = Field(..., min_length=1, description="Unique Spotify artist identifier")
     name: str = Field(..., min_length=1, description="Artist name")
     followers: int = Field(default=0, ge=0, description="Spotify follower count")
@@ -23,7 +38,7 @@ class ArtistRecord(BaseModel):
     instagram_url: str | None = Field(default=None, description="Discovered Instagram profile URL")
 
 
-class LeadDiscoveryPayload(BaseModel):
+class LeadDiscoveryPayload(StrictBaseSchema):
     """Lead discovery contract dispatched to Monday.com Work OS and outreach queues."""
     lead_id: str = Field(..., min_length=1, description="Unique lead identifier")
     artist_name: str = Field(..., min_length=1, description="Artist or producer display name")
@@ -44,7 +59,7 @@ class LeadDiscoveryPayload(BaseModel):
     )
 
 
-class QualityMetrics(BaseModel):
+class QualityMetrics(StrictBaseSchema):
     """Telemetry report recording SIPA data cleaning and deduplication metrics."""
     total_records: int = Field(default=0, ge=0, description="Total records evaluated in database")
     fakes_detected: int = Field(default=0, ge=0, description="Inactive or generic spam profiles flagged")
@@ -58,7 +73,7 @@ class QualityMetrics(BaseModel):
         return round((self.active_leads / self.total_records) * 100, 2)
 
 
-class HostRunnerJob(BaseModel):
+class HostRunnerJob(StrictBaseSchema):
     """Job execution model for the background VPS host runner service."""
     job_id: str = Field(..., min_length=1, description="Unique task runner execution ID")
     task_name: str = Field(..., min_length=1, description="Pipeline job name")
@@ -67,3 +82,19 @@ class HostRunnerJob(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc),
         description="UTC start time"
     )
+
+
+class EnrichmentResult(StrictBaseSchema):
+    """Output contract for artist social intelligence and streaming metric extraction."""
+    instagram_url: str | None = Field(default=None, description="Extracted Instagram profile URL")
+    monthly_listeners: int | None = Field(default=None, ge=0, description="Spotify monthly listeners")
+    max_song_streams: int = Field(default=0, ge=0, description="Highest recorded stream count among top songs")
+    is_verified: bool = Field(default=False, description="Verification badge status")
+
+
+class TalentClassificationResult(StrictBaseSchema):
+    """Contract for semantic evaluation of talent scouting leads performed by LLMs."""
+    is_artist_promotion: bool = Field(description="Flag identifying emerging vocalist or recording artist")
+    artist_name: str | None = Field(default=None, description="Discovered artist name if identifiable")
+    reason: str = Field(default="", description="Classification explanation")
+    confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Model evaluation confidence")
