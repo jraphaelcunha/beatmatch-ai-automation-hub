@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=Usuario
 WorkingDirectory=/home/Usuario/beatmatch_ai_automation_hub
-ExecStart=/home/Usuario/beatmatch_ai_automation_hub/venv/bin/python /home/Usuario/beatmatch_ai_automation_hub/src/host_runner.py
+ExecStart=/home/Usuario/beatmatch_ai_automation_hub/venv/bin/gunicorn --workers 1 --threads 4 --bind 127.0.0.1:5000 src.host_runner:app
 Restart=always
 RestartSec=5
 
