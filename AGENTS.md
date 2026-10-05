@@ -30,3 +30,14 @@ You are an expert n8n automation engineer and integration specialist. Your role 
 * **Instagram Finder & Spotify Resolver (Local Python Workers)**: Resolves Spotify profiles and scrapes Instagram accounts locally using Playwright (bypassing paid Apify limits).
 * **Monday.com Node**: Uploads leads to the Monday CRM with artist details, Spotify URLs, and direct Instagram chat links.
 * **Telegram Notification Node**: Sends automated alerts to the Telegram bot on pipeline health and newly qualified leads.
+
+## Regras inegociáveis
+- Segredos nunca hardcoded nem com valor padrão; se faltar, o processo encerra com erro.
+- Serviços de rede só em 127.0.0.1 (ou IP da bridge Docker) e sempre autenticados.
+- Toda entrada externa (HTTP, args de CLI, dados raspados) validada com Pydantic.
+- Subprocessos em grupo de processos próprio; timeout mata o grupo inteiro.
+- Todo bug corrigido tem um teste que falha antes e passa depois.
+- Toda afirmação no README aponta para uma medição ou script do repo. Proibido: "enterprise-grade", "zero-trust", percentuais sem medição.
+- Nunca alterar datas de commit. Nunca ocultar o uso de agentes.
+- Definição de pronto: ruff, pytest, gitleaks e bandit verdes + resumo de 5 tópicos.
+

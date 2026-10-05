@@ -42,3 +42,10 @@ npm-debug.log*
 deploy.zip
 logs/
 *.log
+
+# Testing & Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+
