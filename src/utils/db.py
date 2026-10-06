@@ -3,15 +3,16 @@ Database connection pool and query execution layer for Supabase PostgreSQL.
 Provides thread-safe connection pooling to prevent socket starvation under concurrent workloads.
 """
 
-from contextlib import contextmanager
 import logging
 import os
 import threading
 import time
-from typing import Any, Generator
+from collections.abc import Generator
+from contextlib import contextmanager
+from typing import Any
 
-from dotenv import load_dotenv
 import psycopg2
+from dotenv import load_dotenv
 from psycopg2.extras import RealDictCursor
 from psycopg2.pool import ThreadedConnectionPool
 
@@ -58,7 +59,7 @@ def get_connection(retries: int = 3, delay: float = 2.0) -> psycopg2.extensions.
     try:
         pool = get_pool()
         return pool.getconn()
-    except Exception as pool_err:
+    except (psycopg2.Error, ValueError, RuntimeError) as pool_err:
         logger.warning("Connection pool acquisition failed (%s). Attempting direct connection with backoff.", pool_err)
         pg_url = _format_db_url(DATABASE_URL)
         for attempt in range(1, retries + 1):
@@ -69,7 +70,7 @@ def get_connection(retries: int = 3, delay: float = 2.0) -> psycopg2.extensions.
                     logger.error("Exhausted connection attempts (%d/%d): %s", attempt, retries, err)
                     raise
                 time.sleep(delay)
-        raise RuntimeError("Unreachable connection attempt state.")
+        raise RuntimeError("Unreachable connection attempt state.") from pool_err
 
 
 def release_connection(conn: psycopg2.extensions.connection) -> None:
