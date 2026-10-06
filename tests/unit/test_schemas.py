@@ -3,8 +3,8 @@ Unit tests for data contracts in BeatMatch AI Automation Hub.
 Verifies strict validation, boundary constraints, and new enrichment models under Pydantic v2.
 """
 
-from pydantic import ValidationError
 import pytest
+from pydantic import ValidationError
 
 from src.models.schemas import (
     ArtistRecord,

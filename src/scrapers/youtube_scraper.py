@@ -1,67 +1,52 @@
+"""
+YouTube scraper and talent scouting mining worker.
+Discovers relevant type-beat videos via YouTube Data API v3 and analyzes comment threads.
+"""
+
+import json
 import logging
 import os
 import re
 import sys
+import urllib.parse
+from datetime import UTC, datetime, timedelta
 
 from dotenv import load_dotenv
 
-# Reconfigure stdout to accept UTF-8 to prevent 'charmap' errors on Windows
-if sys.stdout.encoding != 'utf-8':
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-    except Exception:
-        pass
-
-# Ensure project root is in the path for absolute imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
 from src.reconciler import insert_discovered_lead
 from src.utils.gemini_classifier import classify_lead_with_gemini
+from src.utils.http_client import safe_http_get
+from src.utils.system import configure_utf8_stdout
 
-# Broad pre-filter regex to optimize Gemini API calls
+configure_utf8_stdout()
+
 BROAD_PROMO_REGEX = re.compile(
     r"(my|meu|minha|escuta|check|ouça|song|music|track|beat|canal|sing|rap|artist|sound|look at|da uma olhada|escutar|ouvir|vocal|letra)",
     re.IGNORECASE
 )
 
-# Configure Logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(filename)s] - %(message)s',
+    format="%(asctime)s - %(levelname)s - [%(filename)s] - %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-logger = logging.getLogger("apify_yt")
+logger = logging.getLogger("youtube_scraper")
 
-# Load Environment Variables
 load_dotenv()
 
-APIFY_TOKEN = os.getenv("APIFY_TOKEN")
-is_token_missing = not APIFY_TOKEN or "your_apify_token" in APIFY_TOKEN
-
-# Regex patterns for self-promotion
-SELF_PROMO_REGEX = re.compile(
-    r"(my music|check my track|escuta meu som|my beat|meu som|meu beat|"
-    r"check my channel|ouça minha|escuta minha|my song|my sound|listen to my|"
-    r"check out my|check my playlist|da uma olhada no meu)",
-    re.IGNORECASE
-)
-
-# Default fallback YouTube videos (e.g. popular Lofi / Instrumental Beats videos)
 DEFAULT_VIDEO_URLS = [
-    "https://www.youtube.com/watch?v=jfKfPfyJRdk",  # Lofi Girl
-    "https://www.youtube.com/watch?v=5qap5aO4i9A"   # Lofi Hip Hop Radio
+    "https://www.youtube.com/watch?v=jfKfPfyJRdk",
+    "https://www.youtube.com/watch?v=5qap5aO4i9A"
 ]
 
-def discover_target_videos(queries=None, min_views=30000):
-    """
-    Queries YouTube API to search for type-beat videos (e.g. Drake, Kendrick, Griselda).
-    Filters for videos published in the last year (365 days) with at least min_views.
-    """
+
+def discover_target_videos(queries: list[str] | None = None, min_views: int = 30000) -> list[str]:
+    """Queries YouTube API to discover active type-beat videos with verified view counts."""
     yt_key = os.getenv("YOUTUBE_API_KEY")
     if not yt_key or "your_youtube_api" in yt_key or "AIzaSy" not in yt_key:
-        logger.warning("⚠️ YOUTUBE_API_KEY is not configured or is a placeholder. Using default static video URLs.")
+        logger.warning("YOUTUBE_API_KEY unconfigured or placeholder. Using fallback static video URLs.")
         return DEFAULT_VIDEO_URLS
-        
+
     search_queries = queries or [
         "kendrick lamar type beat",
         "griselda westside gunn type beat",
@@ -70,20 +55,14 @@ def discover_target_videos(queries=None, min_views=30000):
         "chill drill type beat",
         "drake type beat"
     ]
-    
-    import json
-    import urllib.parse
-    import urllib.request
-    from datetime import datetime, timedelta
-    
-    # Target date: 1 year ago in RFC 3339 format (ISO 8601)
-    published_after = (datetime.utcnow() - timedelta(days=365)).strftime('%Y-%m-%dT%H:%M:%SZ')
-    
+
+    published_after = (datetime.now(UTC) - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     video_urls = []
     seen_video_ids = set()
-    
+
     for q in search_queries:
-        logger.info(f"🔍 Searching YouTube for: '{q}' (published after {published_after})...")
+        logger.info("Searching YouTube for: '%s' (published after %s)...", q, published_after)
         try:
             encoded_query = urllib.parse.quote(q)
             search_url = (
@@ -91,29 +70,26 @@ def discover_target_videos(queries=None, min_views=30000):
                 f"?part=snippet&q={encoded_query}&type=video"
                 f"&publishedAfter={published_after}&key={yt_key}&maxResults=20"
             )
-            
-            req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                
+
+            raw_resp = safe_http_get(search_url, timeout=15.0)
+            data = json.loads(raw_resp.decode("utf-8"))
+
             video_ids = []
             for item in data.get("items", []):
                 vid_id = item.get("id", {}).get("videoId")
                 if vid_id and vid_id not in seen_video_ids:
                     video_ids.append(vid_id)
                     seen_video_ids.add(vid_id)
-                    
+
             if not video_ids:
                 continue
-                
-            # Fetch view counts for these videos
+
             ids_str = ",".join(video_ids)
             stats_url = f"https://www.googleapis.com/youtube/v3/videos?part=statistics&id={ids_str}&key={yt_key}"
-            
-            req_stats = urllib.request.Request(stats_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req_stats) as resp_stats:
-                stats_data = json.loads(resp_stats.read().decode("utf-8"))
-                
+
+            raw_stats = safe_http_get(stats_url, timeout=15.0)
+            stats_data = json.loads(raw_stats.decode("utf-8"))
+
             for item in stats_data.get("items", []):
                 vid_id = item.get("id")
                 view_count = item.get("statistics", {}).get("viewCount")
@@ -122,58 +98,51 @@ def discover_target_videos(queries=None, min_views=30000):
                     if views >= min_views:
                         video_url = f"https://www.youtube.com/watch?v={vid_id}"
                         video_urls.append(video_url)
-                        logger.info(f"🎥 Discovered type-beat video: {video_url} | Views: {views:,}")
-                        
-        except Exception as e:
-            logger.warning(f"⚠️ YouTube search failed for query '{q}': {e}")
+                        logger.info("Discovered type-beat video: %s | Views: %d", video_url, views)
+
+        except Exception as err:
+            logger.warning("YouTube search failed for query '%s': %s", q, err)
             continue
-            
+
     if not video_urls:
-        logger.warning("⚠️ No dynamically discovered videos met the criteria. Falling back to default video URLs.")
+        logger.warning("No dynamically discovered videos met criteria. Falling back to default URLs.")
         return DEFAULT_VIDEO_URLS
-        
+
     return list(set(video_urls))
 
-def scrape_youtube_comments(video_urls=None, max_comments=100):
-    """
-    Queries YouTube Data API v3 to fetch comment threads for the target videos.
-    If YOUTUBE_API_KEY is missing, falls back to Mock Mode.
-    """
+
+def scrape_youtube_comments(video_urls: list[str] | None = None, max_comments: int = 100) -> list[dict]:
+    """Queries YouTube Data API v3 to fetch comment threads for target videos."""
     yt_key = os.getenv("YOUTUBE_API_KEY")
     if not yt_key or "your_youtube_api" in yt_key or "AIzaSy" not in yt_key:
-        logger.warning("⚠️ YOUTUBE_API_KEY is not configured or is invalid. Running in MOCK MODE.")
+        logger.warning("YOUTUBE_API_KEY unconfigured or invalid. Running in mock mode.")
         return get_mock_comments()
 
     urls = video_urls or DEFAULT_VIDEO_URLS
     comments_found = []
-    
-    import json
-    import urllib.parse
-    import urllib.request
-    
+
     for url in urls:
         video_id_match = re.search(r"v=([a-zA-Z0-9_-]+)", url)
         if not video_id_match:
             continue
         video_id = video_id_match.group(1)
-        
-        logger.info(f"📥 Fetching YouTube comments via API for video ID: {video_id}...")
+
+        logger.info("Fetching YouTube comments for video ID: %s...", video_id)
         try:
             api_url = (
                 f"https://www.googleapis.com/youtube/v3/commentThreads"
                 f"?part=snippet&videoId={video_id}&maxResults={max_comments}&key={yt_key}"
             )
-            req = urllib.request.Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                
+            raw_data = safe_http_get(api_url, timeout=15.0)
+            data = json.loads(raw_data.decode("utf-8"))
+
             for item in data.get("items", []):
                 snippet = item.get("snippet", {}).get("topLevelComment", {}).get("snippet", {})
                 author = snippet.get("authorDisplayName")
                 channel_url = snippet.get("authorChannelUrl")
                 text = snippet.get("textOriginal") or snippet.get("textDisplay")
                 published_at = snippet.get("publishedAt")
-                
+
                 if author and text:
                     comments_found.append({
                         "author": author,
@@ -181,22 +150,21 @@ def scrape_youtube_comments(video_urls=None, max_comments=100):
                         "comment": text,
                         "publishedAt": published_at
                     })
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to fetch comments via API for video {video_id}: {e}")
+        except Exception as err:
+            logger.warning("Failed to fetch comments for video %s: %s", video_id, err)
             continue
-            
-    logger.info(f"✅ Retrieved {len(comments_found)} comments via YouTube Data API.")
+
+    logger.info("Retrieved %d comments via YouTube Data API.", len(comments_found))
     if not comments_found:
-        logger.warning("⚠️ No comments retrieved. Falling back to MOCK MODE.")
+        logger.warning("No comments retrieved. Falling back to mock mode.")
         return get_mock_comments()
-        
+
     return comments_found
 
-def get_mock_comments():
-    """
-    Returns simulated comments for local testing and validation.
-    """
-    logger.info("ℹ️ Generating mock YouTube comments...")
+
+def get_mock_comments() -> list[dict]:
+    """Generates deterministic mock comments for validation."""
+    logger.info("Generating mock YouTube comments...")
     return [
         {
             "authorDisplayName": "Lil Shifty",
@@ -224,38 +192,33 @@ def get_mock_comments():
         }
     ]
 
-def filter_and_insert_comments(comments):
-    """
-    Filters comments using Gemini 2.5 Flash Talent Classification and pushes leads to Supabase.
-    """
+
+def filter_and_insert_comments(comments: list[dict]) -> int:
+    """Filters comments using Gemini semantic classifier and enqueues qualified leads."""
     promo_count = 0
     inserted_count = 0
-    
+
     for item in comments:
         text = item.get("comment") or item.get("text", "")
         author_name = item.get("author") or item.get("authorDisplayName", "Unknown Author")
-        
-        # Build author channel url
+
         author_url = item.get("authorChannelUrl", "")
         if not author_url and author_name != "Unknown Author":
             if author_name.startswith("@"):
                 author_url = f"https://www.youtube.com/{author_name}"
             else:
                 author_url = f"https://www.youtube.com/@{author_name}"
-        
-        # Broad pre-filter to optimize Gemini API quota
+
         if not BROAD_PROMO_REGEX.search(text) and not ("http" in text or "spotify" in text or "soundcloud" in text):
             continue
-            
-        # Semantic evaluation via Gemini 2.5 Flash
+
         ai_res = classify_lead_with_gemini(text)
-        
+
         if ai_res.get("is_artist_promotion"):
             promo_count += 1
             extracted_name = ai_res.get("artist_name") or author_name
-            logger.info(f"🎯 AI detected Artist Promotion from '{extracted_name}' (Original: '{author_name}'): \"{text[:60]}...\"")
-            
-            # Insert lead into the reconciliation queue
+            logger.info("AI detected artist promotion from '%s': %s...", extracted_name, text[:60])
+
             result = insert_discovered_lead(
                 name=extracted_name,
                 youtube_channel=author_url,
@@ -263,22 +226,25 @@ def filter_and_insert_comments(comments):
             )
             if result:
                 inserted_count += 1
-                
-    logger.info(f"📊 Filtering Summary: Checked {len(comments)} comments. Found {promo_count} self-promos. Successfully inserted {inserted_count} leads.")
+
+    logger.info(
+        "Filtering Summary: Checked %d comments. Found %d promotions. Successfully inserted %d leads.",
+        len(comments),
+        promo_count,
+        inserted_count
+    )
     return inserted_count
 
-def main():
-    logger.info("🎬 Starting YouTube Scraper Job...")
-    # 1. Dynamically discover type beat videos meeting criteria
+
+def main() -> None:
+    """Main execution entrypoint for YouTube mining."""
+    logger.info("Starting YouTube Scraper Job...")
     video_urls = discover_target_videos()
-    logger.info(f"📂 Found {len(video_urls)} dynamically discovered type-beat videos to scrape.")
-    
-    # 2. Run comments scraper on discovered videos (limit to top 5 to optimize time)
+    logger.info("Found %d target videos to evaluate.", len(video_urls))
     comments = scrape_youtube_comments(video_urls=video_urls[:5], max_comments=50)
-    
-    # 3. Filter comments and push leads
     filter_and_insert_comments(comments)
-    logger.info("🏁 YouTube Scraper Job Completed.")
+    logger.info("YouTube Scraper Job Completed.")
+
 
 if __name__ == "__main__":
     main()

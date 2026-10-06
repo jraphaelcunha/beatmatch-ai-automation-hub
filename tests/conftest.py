@@ -1,8 +1,9 @@
-﻿"""
+"""
 Pytest global fixtures and configurations for BeatMatch AI Automation Hub test suite.
 """
 
 import pytest
+
 from src.models.schemas import ArtistRecord, LeadDiscoveryPayload
 
 

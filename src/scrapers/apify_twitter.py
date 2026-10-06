@@ -5,18 +5,11 @@ import sys
 
 from dotenv import load_dotenv
 
-# Reconfigure stdout to accept UTF-8 to prevent 'charmap' errors on Windows
-if sys.stdout.encoding != 'utf-8':
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-    except Exception:
-        pass
-
-# Ensure project root is in the path for absolute imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
 from src.reconciler import insert_discovered_lead
 from src.utils.gemini_classifier import classify_lead_with_gemini
+from src.utils.system import configure_utf8_stdout
+
+configure_utf8_stdout()
 
 # Broad pre-filter regex to optimize Gemini API calls
 BROAD_PROMO_REGEX = re.compile(
@@ -56,7 +49,7 @@ def scrape_tweets(queries=None, max_tweets=30):
     Falls back to Mock Mode if APIFY_TOKEN is missing or invalid.
     """
     search_terms = queries or SEARCH_QUERIES
-    
+
     if is_token_missing:
         logger.warning("⚠️ APIFY_TOKEN is not configured or is a placeholder. Running in MOCK MODE.")
         return get_mock_tweets()
@@ -64,35 +57,35 @@ def scrape_tweets(queries=None, max_tweets=30):
     try:
         from apify_client import ApifyClient
         client = ApifyClient(APIFY_TOKEN)
-        
+
         # Using a free-plan compatible Twitter Scraper actor on Apify
         actor_id = "quacker/twitter-scraper"
-        
+
         # Combine queries into one execution search list or search separately
         # For simplicity and efficiency, we run the search for the top queries
         tweets_found = []
         for query in search_terms[:3]:  # Limit queries to save runs
-            logger.info(f"🚀 Running Twitter scraper for query: '{query}'...")
+            logger.info("Running Twitter scraper for query: '%s'...", query)
             run_input = {
                 "searchTerms": [query],
                 "maxTweets": max_tweets,
                 "searchMode": "live"
             }
             run = client.actor(actor_id).call(run_input=run_input)
-            
+
             run_dict = run if isinstance(run, dict) else getattr(run, "_data", {})
             dataset_id = run_dict.get("defaultDatasetId") or getattr(run, "default_dataset_id", getattr(run, "defaultDatasetId", None))
-            logger.info(f"📥 Fetching results from dataset {dataset_id}...")
+            logger.info("Fetching results from dataset %s...", dataset_id)
             items = client.dataset(dataset_id).list_items().items
             tweets_found.extend(items)
-            
+
         # Filter out noResults objects
         tweets_found = [t for t in tweets_found if not t.get("noResults")]
-        
+
         if not tweets_found:
             logger.warning("⚠️ No valid tweets found (possibly due to Apify pricing/plan limits). Falling back to MOCK MODE.")
             return get_mock_tweets()
-            
+
         logger.info(f"✅ Retrieved {len(tweets_found)} valid tweets in total.")
         return tweets_found
 
@@ -104,7 +97,7 @@ def get_mock_tweets():
     """
     Returns simulated tweets for local testing and validation.
     """
-    logger.info("ℹ️ Generating mock tweets...")
+    logger.info("Generating mock tweets...")
     return [
         {
             "user": {
@@ -150,39 +143,44 @@ def parse_and_insert_tweets(tweets):
     Uses Gemini 2.5 Flash for talent verification.
     """
     inserted_count = 0
-    
+
     for tweet in tweets:
         user_info = tweet.get("user", {})
         screen_name = user_info.get("screen_name")
         display_name = user_info.get("name")
         text = tweet.get("full_text") or tweet.get("text", "")
-        
+
         if not screen_name or not display_name:
             continue
-            
+
         # Broad pre-filter to optimize Gemini API calls
         if not BROAD_PROMO_REGEX.search(text) and not ("http" in text or "spotify" in text or "soundcloud" in text):
             continue
-            
+
         # Semantic evaluation via Gemini 2.5 Flash
         ai_res = classify_lead_with_gemini(text)
-        
+
         if ai_res.get("is_artist_promotion"):
             extracted_name = ai_res.get("artist_name") or display_name
             twitter_url = f"https://twitter.com/{screen_name}"
-            
+
             # Check if text contains a Spotify Artist URL
             spotify_match = SPOTIFY_ARTIST_REGEX.search(text)
             spotify_id = None
             spotify_url = None
-            
+
             if spotify_match:
                 spotify_id = spotify_match.group(1)
                 spotify_url = spotify_match.group(0)
-                logger.info(f"🎵 Spotify Artist URL found in tweet by @{screen_name}: {spotify_url} (ID: {spotify_id})")
-            
-            logger.info(f"🎯 AI approved tweet from @{screen_name} ('{extracted_name}')")
-            
+                logger.info(
+                    "Spotify Artist URL found in tweet by @%s: %s (ID: %s)",
+                    screen_name,
+                    spotify_url,
+                    spotify_id
+                )
+
+            logger.info("AI approved tweet from @%s ('%s')", screen_name, extracted_name)
+
             result = insert_discovered_lead(
                 name=extracted_name,
                 spotify_id=spotify_id,
@@ -192,15 +190,15 @@ def parse_and_insert_tweets(tweets):
             )
             if result:
                 inserted_count += 1
-                
-    logger.info(f"📊 Filtering Summary: Checked {len(tweets)} tweets. Successfully inserted {inserted_count} leads.")
+
+    logger.info("Filtering Summary: Checked %d tweets. Successfully inserted %d leads.", len(tweets), inserted_count)
     return inserted_count
 
 def main():
-    logger.info("🎬 Starting Twitter Scraper Job...")
+    logger.info("Starting Twitter Scraper Job...")
     tweets = scrape_tweets()
     parse_and_insert_tweets(tweets)
-    logger.info("🏁 Twitter Scraper Job Completed.")
+    logger.info("Twitter Scraper Job Completed.")
 
 if __name__ == "__main__":
     main()

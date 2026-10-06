@@ -14,9 +14,9 @@ from dotenv import load_dotenv
 def run_db_setup():
     # Load environment variables from .env file if present
     load_dotenv()
-    
+
     database_url = os.getenv("DATABASE_URL")
-    
+
     # Check if DATABASE_URL is missing or using default example placeholder
     if not database_url or "your_spotify_client_id" in database_url or "db.supabase.co:6543" in database_url:
         print("DATABASE_URL is missing or contains placeholder values. Skipping database schema setup.")
@@ -34,13 +34,13 @@ def run_db_setup():
         # 1. Check if 'artists' table exists
         cur.execute("""
             SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_schema = 'public' 
+                SELECT FROM information_schema.tables
+                WHERE table_schema = 'public'
                 AND table_name = 'artists'
             );
         """)
         table_exists = cur.fetchone()[0]
-        
+
         create_table_query = """
         CREATE TABLE artists (
             spotify_id VARCHAR(255) PRIMARY KEY,
@@ -65,7 +65,7 @@ def run_db_setup():
             ))
         );
         """
-        
+
         if not table_exists:
             print("Table 'artists' does not exist. Creating table...")
             cur.execute(create_table_query)
@@ -89,22 +89,22 @@ def run_db_setup():
                 "monthly_listeners": "INTEGER",
                 "max_song_views": "INTEGER"
             }
-            
+
             cur.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
+                SELECT column_name
+                FROM information_schema.columns
                 WHERE table_name = 'artists';
             """)
             existing_cols = {row[0] for row in cur.fetchall()}
-            
+
             for col, col_def in columns_to_ensure.items():
                 if col not in existing_cols:
                     print(f"Adding missing column '{col}' of type {col_def}...")
                     cur.execute(f"ALTER TABLE artists ADD COLUMN {col} {col_def};")
-                    
+
                     if col == "spotify_id":
                         cur.execute("ALTER TABLE artists ADD PRIMARY KEY (spotify_id);")
-            
+
             # Ensure the check constraint exists and is up to date
             print("Reconciling status check constraint 'chk_status'...")
             try:
@@ -117,7 +117,7 @@ def run_db_setup():
                     ));
                 """)
                 print("Status check constraint 'chk_status' updated successfully.")
-            except Exception as e:
+            except psycopg2.Error as e:
                 print(f"Could not enforce check constraint: {e}.", file=sys.stderr)
 
         # 2. Check or create indexes on status and name
@@ -165,7 +165,7 @@ def run_db_setup():
         conn.close()
         print("Database schema migration completed successfully!")
         return True
-    except Exception as e:
+    except (psycopg2.Error, ValueError, RuntimeError) as e:
         print(f"Error executing database migrations: {e}", file=sys.stderr)
         return False
 

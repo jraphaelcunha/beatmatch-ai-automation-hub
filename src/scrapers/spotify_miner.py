@@ -33,7 +33,7 @@ FOCUSED_GENRES = [
 MODIFIERS = ["underground", "indie", "upcoming", "local", "unsigned"]
 
 COUNTRIES = [
-    "US", "BR", "GB", "FR", "DE", "CA", "AU", "NG", "ZA", "NL", 
+    "US", "BR", "GB", "FR", "DE", "CA", "AU", "NG", "ZA", "NL",
     "ES", "IT", "MX", "CO", "JP", "KR", "NZ", "IE", "SE", "PL"
 ]
 
@@ -48,16 +48,16 @@ def get_spotify_client():
     """
     client_id = os.getenv("SPOTIFY_CLIENT_ID", "")
     client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "")
-    
+
     # Validate credentials are present
     if not client_id or not client_secret or "your_" in client_id:
         logger.warning("⚠️ SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET not configured in .env")
         return None
-        
+
     try:
         import spotipy
         from spotipy.oauth2 import SpotifyClientCredentials
-        
+
         auth_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
         sp = spotipy.Spotify(auth_manager=auth_manager, requests_timeout=15)
         sp.search(q="test", type="artist", limit=1)
@@ -72,24 +72,24 @@ def generate_search_terms():
     cross-referenced with regional markets to exhaustively discover underground artists.
     """
     terms = []
-    
+
     # Combine focused genres x countries
     for country in COUNTRIES:
         for genre in FOCUSED_GENRES:
             terms.append((genre, country))
-            
+
     # Combine modifier + genre x countries
     for country in COUNTRIES:
         for mod in MODIFIERS:
             terms.append((f"{mod} rapper", country))
             terms.append((f"{mod} trap", country))
             terms.append((f"{mod} rnb", country))
-            
+
     # Wildcard letters x countries
     for country in COUNTRIES:
         for char in string.ascii_lowercase:
             terms.append((char, country))
-            
+
     # Add special regional queries
     terms.append(("rapper br", "BR"))
     terms.append(("trap br", "BR"))
@@ -99,7 +99,7 @@ def generate_search_terms():
     terms.append(("rap francais", "FR"))
     terms.append(("rap mexicano", "MX"))
     terms.append(("deutschrap", "DE"))
-    
+
     # Regional city-specific niche queries
     # Brazil
     terms.append(("trap salvador", "BR"))
@@ -108,27 +108,27 @@ def generate_search_terms():
     terms.append(("rap sp", "BR"))
     terms.append(("trap rj", "BR"))
     terms.append(("rap nordeste", "BR"))
-    
+
     # USA
     terms.append(("detroit rap", "US"))
     terms.append(("chicago drill", "US"))
     terms.append(("atlanta trap", "US"))
     terms.append(("nyc drill", "US"))
-    
+
     # UK
     terms.append(("london drill", "GB"))
     terms.append(("birmingham rap", "GB"))
-    
+
     # France
     terms.append(("rap marseille", "FR"))
     terms.append(("rappeur marseille", "FR"))
     terms.append(("rap paris", "FR"))
-    
+
     # Germany / Spain
     terms.append(("berlin rap", "DE"))
     terms.append(("rap barcelona", "ES"))
     terms.append(("rap madrid", "ES"))
-    
+
     return list(set(terms))
 
 def mine_spotify_artists(sp):
@@ -137,27 +137,27 @@ def mine_spotify_artists(sp):
     """
     if not sp:
         return get_mock_artists()
-        
+
     all_terms = generate_search_terms()
     # Randomly select a subset to prevent API rate limiting on each run
-    selected_terms = random.sample(all_terms, min(15, len(all_terms)))
-    logger.info(f"🔮 Generated {len(all_terms)} total search combinations. Selected 15 random terms for this execution run.")
-    
+    selected_terms = random.sample(all_terms, min(15, len(all_terms)))  # nosec B311  # non-cryptographic subset sampling
+    logger.info("Generated %d total search combinations. Selected 15 terms for this execution run.", len(all_terms))
+
     discovered_artists = []
     seen_ids = set()
-    
+
     for term, country in selected_terms:
-        logger.info(f"🔍 Mining: '{term}' in market '{country}'...")
+        logger.info("Mining: '%s' in market '%s'...", term, country)
         try:
             # Run search query targeting the specific market
             results = sp.search(q=term, type='artist', limit=50, market=country)
             page_count = 0
-            
+
             while results and page_count < 2:
                 artists = results.get('artists', {}).get('items', [])
                 if not artists:
                     break
-                    
+
                 for artist in artists:
                     name = artist.get('name')
                     artist_id = artist.get('id')
@@ -165,14 +165,14 @@ def mine_spotify_artists(sp):
                     followers = artist.get('followers', {}).get('total', 0)
                     genres = artist.get('genres', [])
                     spotify_url = artist.get('external_urls', {}).get('spotify')
-                    
+
                     if artist_id in seen_ids:
                         continue
-                        
+
                     # Pre-filtering: Emerging popularity 1-15, Followers <= 8,000
                     if not (1 <= popularity <= 15 and followers <= 8000):
                         continue
-                        
+
                     # Filter out forbidden genres (Pop, House, EDM)
                     is_forbidden = False
                     for genre_str in genres:
@@ -183,16 +183,16 @@ def mine_spotify_artists(sp):
                                 break
                         if is_forbidden:
                             break
-                            
+
                     if is_forbidden:
                         continue
-                        
+
                     # Blacklist check
                     name_lower = name.lower()
                     if any(b in name_lower for b in ["duquesa", "derek", "ryu, the runner", "ryu the runner", "jovem dex", "sonder"]):
                         logger.info(f"⏭️ Blacklist match skipped: '{name}'")
                         continue
-                        
+
                     seen_ids.add(artist_id)
                     discovered_artists.append({
                         "name": name,
@@ -202,27 +202,27 @@ def mine_spotify_artists(sp):
                         "followers": followers,
                         "genres": genres
                     })
-                    
+
                 next_url = results.get('artists', {}).get('next')
                 if next_url:
                     results = sp.next(results['artists'])
                     page_count += 1
-                    time.sleep(random.uniform(0.5, 1.0))
+                    time.sleep(random.uniform(0.5, 1.0))  # nosec B311 # non-cryptographic delay
                 else:
                     break
-                    
+
         except Exception as e:
-            logger.error(f"❌ Error searching for '{term}' in market '{country}': {e}")
+            logger.error("Error searching for '%s' in market '%s': %s", term, country, e)
             continue
-            
-    logger.info(f"✅ Discovered {len(discovered_artists)} unique artists passing pre-filters.")
+
+    logger.info("Discovered %d unique artists passing pre-filters.", len(discovered_artists))
     return discovered_artists
 
 def get_mock_artists():
     """
     Mock data for local testing when credentials are not configured.
     """
-    logger.info("ℹ️ Generating mock Spotify artists...")
+    logger.info("Generating mock Spotify artists...")
     return [
         {
             "name": "Emerging Underground Rapper",
@@ -248,9 +248,14 @@ def insert_discovered_artists(artists):
         name = artist["name"]
         spotify_id = artist["spotify_id"]
         spotify_url = artist["spotify_url"]
-        
-        logger.info(f"🎯 Registering discovered artist '{name}' (Popularity: {artist.get('popularity', 'N/A')}, Followers: {artist.get('followers', 'N/A')})")
-        
+
+        logger.info(
+            "Registering discovered artist '%s' (Popularity: %s, Followers: %s)",
+            name,
+            artist.get("popularity", "N/A"),
+            artist.get("followers", "N/A")
+        )
+
         result = insert_discovered_lead(
             name=name,
             spotify_id=spotify_id,
@@ -259,16 +264,16 @@ def insert_discovered_artists(artists):
         )
         if result:
             inserted_count += 1
-            
-    logger.info(f"📊 Mining Summary: Discovered {len(artists)} artists. Successfully inserted {inserted_count} leads.")
+
+    logger.info("Mining Summary: Discovered %d artists. Successfully inserted %d leads.", len(artists), inserted_count)
     return inserted_count
 
 def main():
-    logger.info("🎬 Starting Spotify Mining Job...")
+    logger.info("Starting Spotify Mining Job...")
     sp = get_spotify_client()
     artists = mine_spotify_artists(sp)
     insert_discovered_artists(artists)
-    logger.info("🏁 Spotify Mining Job Completed.")
+    logger.info("Spotify Mining Job Completed.")
 
 if __name__ == "__main__":
     main()

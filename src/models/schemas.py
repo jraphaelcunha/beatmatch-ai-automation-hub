@@ -3,7 +3,7 @@ Data contracts and schema definitions for BeatMatch AI Automation Hub.
 Enforces validation and serialization across scrapers, enrichers, and quality engines using Pydantic v2.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -54,7 +54,7 @@ class LeadDiscoveryPayload(StrictBaseSchema):
         description="Verification confidence level (0.0 to 1.0)"
     )
     discovered_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="UTC discovery timestamp"
     )
 
@@ -79,7 +79,7 @@ class HostRunnerJob(StrictBaseSchema):
     task_name: str = Field(..., min_length=1, description="Pipeline job name")
     status: Literal["IDLE", "RUNNING", "COMPLETED", "FAILED"] = "IDLE"
     started_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="UTC start time"
     )
 

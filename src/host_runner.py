@@ -8,11 +8,11 @@ import hmac
 import logging
 import os
 import signal
-import subprocess  # nosec: B404 - required for isolated process lifecycle management
+import subprocess  # nosec B404  # required for isolated process lifecycle management
 import sys
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from dotenv import load_dotenv
@@ -207,7 +207,7 @@ def run_script_async(job_id: str, script_name: str, script_path: str, args: list
     log_file_path = os.path.join(log_dir, f"{script_name}.log")
     _rotate_log_file(log_file_path)
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     persist_job_start(job_id, script_name, started_at)
     exit_code = None
     proc = None
@@ -225,7 +225,7 @@ def run_script_async(job_id: str, script_name: str, script_path: str, args: list
             if os.name != "nt":
                 popen_kwargs["start_new_session"] = True
 
-            proc = subprocess.Popen(cmd, **popen_kwargs)  # nosec: B603 - cmd strictly validated with allowlist and shell=False
+            proc = subprocess.Popen(cmd, **popen_kwargs)  # nosec B603  # cmd strictly validated with allowlist and shell=False
 
             with _active_lock:
                 if script_name in ACTIVE_PROCESSES:
@@ -257,7 +257,7 @@ def run_script_async(job_id: str, script_name: str, script_path: str, args: list
         with _active_lock:
             ACTIVE_PROCESSES.pop(script_name, None)
 
-        finished_at = datetime.now(timezone.utc)
+        finished_at = datetime.now(UTC)
         final_status = "COMPLETED" if exit_code == 0 else "FAILED"
         persist_job_finish(job_id, final_status, exit_code, finished_at)
 
@@ -337,7 +337,7 @@ def run_script(script_name: str):
         ACTIVE_PROCESSES[script_name] = {
             "job_id": job_id,
             "status": "QUEUED",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": datetime.now(UTC).isoformat(),
             "pid": None,
             "process": None,
         }

@@ -96,7 +96,7 @@ def classify_lead_with_gemini(
                 headers={"Content-Type": "application/json", "User-Agent": "BeatMatch-Scout/2.0"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=12) as response:
+            with urllib.request.urlopen(req, timeout=12) as response:  # nosec B310  # verified https scheme
                 body = response.read().decode("utf-8")
                 parsed_response = json.loads(body)
 
@@ -121,7 +121,7 @@ def classify_lead_with_gemini(
 
         except urllib.error.HTTPError as http_err:
             if http_err.code in (429, 500, 503) and attempt < max_retries:
-                sleep_duration = (base_backoff ** attempt) + random.uniform(0.1, 0.6)
+                sleep_duration = (base_backoff ** attempt) + random.uniform(0.1, 0.6)  # nosec B311  # non-cryptographic jitter
                 logger.warning(
                     "Gemini API rate/server limit (HTTP %d). Retry %d/%d in %.2fs",
                     http_err.code, attempt, max_retries, sleep_duration
@@ -130,8 +130,8 @@ def classify_lead_with_gemini(
                 continue
             logger.error("Gemini API HTTP Error %d on attempt %d: %s", http_err.code, attempt, http_err)
             break
-        except Exception as general_err:
-            logger.error("Gemini evaluation error on attempt %d: %s", attempt, general_err)
+        except (urllib.error.URLError, json.JSONDecodeError, KeyError, ValueError):
+            logger.exception("Gemini evaluation error on attempt %d", attempt)
             break
 
     return TalentClassificationResult(

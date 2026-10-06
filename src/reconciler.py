@@ -1,22 +1,47 @@
+"""
+Reconciliation engine for BeatMatch AI master lead queue.
+Synchronizes artist identifiers, validates schema transitions, and prevents SQL injection using psycopg2.sql.
+"""
+
 import hashlib
-import os
-import sys
+import logging
 
 import psycopg2
+from psycopg2 import sql
 
-# Reconfigure stdout to accept UTF-8 to prevent 'charmap' errors on Windows
-if sys.stdout.encoding != 'utf-8':
-    try:
-        sys.stdout.reconfigure(encoding='utf-8')
-    except Exception:
-        pass
-
-# Ensure project root is in the path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.utils.db import get_connection
+from src.utils.system import configure_utf8_stdout
+
+configure_utf8_stdout()
+
+logger = logging.getLogger("reconciler")
+
+ALLOWED_ARTIST_UPDATE_COLUMNS: set[str] = {
+    "name",
+    "followers",
+    "popularity",
+    "genres",
+    "instagram_url",
+    "twitter_url",
+    "youtube_channel",
+    "monthly_listeners",
+    "max_song_streams",
+    "status",
+    "spotify_id",
+    "spotify_url",
+    "processed_at",
+}
 
 
-def insert_discovered_lead(name, spotify_id=None, spotify_url=None, instagram_url=None, twitter_url=None, youtube_channel=None, source="youtube_comment"):
+def insert_discovered_lead(
+    name: str,
+    spotify_id: str | None = None,
+    spotify_url: str | None = None,
+    instagram_url: str | None = None,
+    twitter_url: str | None = None,
+    youtube_channel: str | None = None,
+    source: str = "youtube_comment"
+) -> tuple[str, str] | None:
     """
     Inserts a newly discovered lead into the master queue table.
     Sets status based on what fields are present.
@@ -24,20 +49,23 @@ def insert_discovered_lead(name, spotify_id=None, spotify_url=None, instagram_ur
     try:
         conn = get_connection()
         cursor = conn.cursor()
-    except (ValueError, psycopg2.OperationalError):
-        logger_name = "reconciler"
-        print(f"⚠️ [MOCK DB] DATABASE_URL missing or connection failed. Mocking lead insert for '{name}' (source: {source}).")
+    except (ValueError, psycopg2.OperationalError) as conn_err:
+        logger.warning(
+            "DATABASE_URL missing or connection failed (%s). Mocking lead insert for '%s' (source: %s).",
+            conn_err,
+            name,
+            source
+        )
         return ("mock_id", "pending_spotify")
-        
+
     try:
-        # Decide status based on missing data
         if not spotify_id and not spotify_url:
-            status = 'pending_spotify'
+            status = "pending_spotify"
         elif not instagram_url:
-            status = 'pending_instagram'
+            status = "pending_instagram"
         else:
-            status = 'ready_for_sipa'
-            
+            status = "ready_for_sipa"
+
         query = """
             INSERT INTO public.artists (
                 spotify_id, name, spotify_url, instagram_url, twitter_url, youtube_channel, status, scouting_source, created_at
@@ -48,28 +76,31 @@ def insert_discovered_lead(name, spotify_id=None, spotify_url=None, instagram_ur
                 youtube_channel = COALESCE(artists.youtube_channel, EXCLUDED.youtube_channel)
             RETURNING spotify_id, status;
         """
-        
-        # Generate deterministic temporary identifier for database uniqueness constraint
-        actual_id = spotify_id if spotify_id else f"temp_{hashlib.md5(f'{name}:{source}'.encode('utf-8')).hexdigest()[:12]}"
-        
+
+        # Generate deterministic temporary identifier using SHA-256
+        if spotify_id:
+            actual_id = spotify_id
+        else:
+            hashed_id = hashlib.sha256(f"{name}:{source}".encode()).hexdigest()[:12]
+            actual_id = f"temp_{hashed_id}"
+
         cursor.execute(query, (
             actual_id, name, spotify_url, instagram_url, twitter_url, youtube_channel, status, source
         ))
         conn.commit()
         result = cursor.fetchone()
-        print(f"✅ Discovered artist '{name}' recorded in master queue. Status: {result[1]}")
+        logger.info("Discovered artist '%s' recorded in master queue. Status: %s", name, result[1])
         return result
-    except Exception as e:
-        print(f"❌ Error inserting discovered lead '{name}': {e}")
+    except Exception:
+        logger.exception("Error inserting discovered lead '%s'", name)
         return None
     finally:
-        if 'conn' in locals() and conn:
+        if "conn" in locals() and conn:
             conn.close()
 
-def get_pending_queue(status_filter, limit=10):
-    """
-    Fetches records pending a specific reconciliation step.
-    """
+
+def get_pending_queue(status_filter: str, limit: int = 10) -> list[tuple]:
+    """Fetches records pending a specific reconciliation step."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -82,71 +113,89 @@ def get_pending_queue(status_filter, limit=10):
         """
         cursor.execute(query, (status_filter, limit))
         return cursor.fetchall()
-    except Exception as e:
-        print(f"❌ Error fetching pending queue for status '{status_filter}': {e}")
+    except Exception:
+        logger.exception("Error fetching pending queue for status '%s'", status_filter)
         return []
     finally:
         conn.close()
 
-def transition_status(spotify_id, new_status, new_spotify_id=None, processed_fields=None):
+
+def transition_status(
+    spotify_id: str,
+    new_status: str,
+    new_spotify_id: str | None = None,
+    processed_fields: dict[str, str | int | float | None] | None = None
+) -> bool:
     """
     Updates status and fields of an artist in the reconciliation queue.
+    Uses psycopg2.sql and an explicit column allowlist to eliminate SQL injection risks.
     """
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        
-        # Build dynamic updates if needed
-        updates = ["status = %s", "processed_at = NOW()"]
-        params = [new_status]
-        
+
+        # Build dynamic updates parameterized with psycopg2.sql
+        sql_updates = [
+            sql.SQL("status = %s"),
+            sql.SQL("processed_at = NOW()"),
+        ]
+        params: list[str | int | float | None] = [new_status]
+
         if new_spotify_id:
-            updates.append("spotify_id = %s")
+            sql_updates.append(sql.SQL("spotify_id = %s"))
             params.append(new_spotify_id)
-            
+
         if processed_fields:
             for field, val in processed_fields.items():
-                updates.append(f"{field} = %s")
+                if field not in ALLOWED_ARTIST_UPDATE_COLUMNS:
+                    raise ValueError(f"Disallowed column identifier for update: '{field}'")
+                sql_updates.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
                 params.append(val)
-                
+
         params.append(spotify_id)
-        
-        query = f"""
-            UPDATE public.artists
-            SET {", ".join(updates)}
-            WHERE spotify_id = %s;
-        """
-        
+
+        query = sql.SQL("UPDATE public.artists SET {} WHERE spotify_id = %s;").format(
+            sql.SQL(", ").join(sql_updates)
+        )
+
         cursor.execute(query, params)
         conn.commit()
-        print(f"🔄 Transitioned artist (ID: {spotify_id}) to status: '{new_status}'")
+        logger.info("Transitioned artist (ID: %s) to status: '%s'", spotify_id, new_status)
         return True
-    except Exception as e:
-        err_msg = str(e)
+    except ValueError as val_err:
+        logger.error("Validation error during status transition: %s", val_err)
+        return False
+    except Exception as exc:
+        err_msg = str(exc)
         if "unique constraint" in err_msg.lower() or "duplicate key" in err_msg.lower():
-            logger_name = "reconciler"
-            print(f"⚠️ Duplicate artist detected. Spotify ID {new_spotify_id} already exists. Deleting duplicate temporary lead {spotify_id}.")
+            logger.warning(
+                "Duplicate artist detected. Spotify ID %s already exists. Deleting duplicate temporary lead %s.",
+                new_spotify_id,
+                spotify_id
+            )
             try:
                 conn.rollback()
                 delete_cursor = conn.cursor()
                 delete_cursor.execute("DELETE FROM public.artists WHERE spotify_id = %s;", (spotify_id,))
                 conn.commit()
-                print(f"🗑️ Successfully deleted duplicate temporary lead {spotify_id}.")
+                logger.info("Successfully deleted duplicate temporary lead %s", spotify_id)
                 return True
-            except Exception as delete_err:
-                print(f"❌ Failed to delete duplicate temporary lead {spotify_id}: {delete_err}")
-        print(f"❌ Error transitioning status for artist ID {spotify_id}: {e}")
+            except Exception:
+                logger.exception("Failed to delete duplicate temporary lead %s", spotify_id)
+        logger.exception("Error transitioning status for artist ID %s", spotify_id)
         return False
     finally:
         conn.close()
 
+
 if __name__ == "__main__":
-    # Test connection and fetch counts
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT status, COUNT(*) FROM public.artists GROUP BY status;")
-    results = cursor.fetchall()
-    print("📊 Current queue counts by status:")
-    for row in results:
-        print(f"  - {row[0]}: {row[1]}")
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status, COUNT(*) FROM public.artists GROUP BY status;")
+        results = cursor.fetchall()
+        logger.info("Current queue counts by status:")
+        for row in results:
+            logger.info("  - %s: %d", row[0], row[1])
+    finally:
+        conn.close()

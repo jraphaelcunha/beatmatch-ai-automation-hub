@@ -6,7 +6,7 @@ Tests security hardening, authentication, argument validation, concurrency, and 
 import os
 import signal
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -172,7 +172,7 @@ def test_get_job_not_found_returns_404(client, auth_headers):
 def test_job_persistence_lifecycle(client, auth_headers):
     """Job lifecycle must be persisted and retrievable via GET /jobs/<id>."""
     test_job_id = "job_test_persistence_uuid_123"
-    started = datetime.now(timezone.utc)
+    started = datetime.now(UTC)
     persist_job_start(test_job_id, "sipa_cleaner", started)
 
     response = client.get(f"/jobs/{test_job_id}", headers=auth_headers)
@@ -182,7 +182,7 @@ def test_job_persistence_lifecycle(client, auth_headers):
     assert data["status"] == "RUNNING"
     assert data["script_name"] == "sipa_cleaner"
 
-    finished = datetime.now(timezone.utc)
+    finished = datetime.now(UTC)
     persist_job_finish(test_job_id, "COMPLETED", 0, finished)
 
     response_finished = client.get(f"/jobs/{test_job_id}", headers=auth_headers)
