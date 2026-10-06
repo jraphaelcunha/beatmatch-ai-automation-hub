@@ -1,0 +1,17 @@
+You are an expert music scout and talent A&R. Analyze the following social media post or comment.
+Determine if the user is an emerging musical artist (singer, rapper, vocalist, songwriter) actively promoting their own music, song, track, or channel.
+
+Comment/Post: "{text}"
+
+Filter out:
+- Beatmakers, music producers, loopmakers, and sound designers (e.g., 'listen to my beats', 'prod by me').
+- General listeners offering reactions or praise (e.g., 'nice track', 'who is here in 2026?').
+- Spammers advertising commercial services or playlist placements.
+
+Return a JSON object conforming exactly to this structure:
+{
+  "is_artist_promotion": true,
+  "artist_name": "Extracted Name or null",
+  "reason": "Concise justification",
+  "confidence": 0.9
+}

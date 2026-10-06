@@ -1,0 +1,5 @@
+id,text,source,ground_truth_is_artist,ground_truth_artist_name,notes
+1,"Check out my new single 'Sunset Glow' on Spotify! Link in bio. - Marcus Kane",youtube_comment,TRUE,Marcus Kane,Example: Clear independent artist self-promotion
+2,"Fire drum kit and loops available on my site, DM for leases. Prod by 808Beast",twitter_search,FALSE,,Example: Beatmaker / producer to be filtered out
+3,"This beat goes so crazy, loved the snare roll at 1:20!",youtube_comment,FALSE,,Example: General listener reaction to be filtered out
+4,"[PREENCHER] Cole aqui o texto do comentário ou tweet",[PREENCHER: youtube_comment / twitter_search],[PREENCHER: TRUE / FALSE],[PREENCHER: Nome do artista ou vazio],[PREENCHER: Observações opcionais]
