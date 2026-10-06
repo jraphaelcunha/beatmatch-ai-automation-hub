@@ -1,120 +1,159 @@
-# 🏆 BeatMatch AI Automation Hub — Pipeline Autônomo de Inteligência B2B & Geração de Leads
+# BeatMatch AI Automation Hub
+
+[![CI Quality Gate](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub)
+[![Python Versions](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue?logo=python)](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub)
+[![Test Suite](https://img.shields.io/badge/Tests-59%20passed-brightgreen)](tests/)
+[![Coverage](https://img.shields.io/badge/Coverage-50.38%25-green)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Contracts](https://img.shields.io/badge/Contracts-Pydantic%20v2-red)](src/models/schemas.py)
 
 > **[ 🇺🇸 Read in English ](README.md)**
 
-Um pipeline de engenharia de dados autônomo e orquestração de IA de nível enterprise projetado para **produtores musicais, beatmakers e estúdios de engenharia de áudio**. O sistema automatiza a prospecção, qualificação e enriquecimento de artistas independentes em ascensão com alta afinidade a gêneros musicais específicos (Trap, Boom Bap, R&B, Drill), identificando potenciais clientes com perfil ideal para **compra de instrumentais / licenciamento de beats** e contratação de **serviços profissionais de áudio (mixagem e masterização)**.
-
-Este projeto demonstra automação avançada com IA (**AI Automation**), integrando microserviços Python customizados, crawlers com Playwright, classificação semântica via LLM (Gemini 2.5 Flash), validação de qualidade heurística (**Motor SIPA**) e envio direto para CRM (**Monday.com**), tudo orquestrado de forma assíncrona pelo **n8n** e processando mais de **54.000 registros** no Supabase PostgreSQL com 0% de memory leak.
+Pipeline autônomo de descoberta, qualificação e enriquecimento de talentos musicais projetado para produtores musicais, beatmakers e estúdios de áudio. Converte sinais sociais não estruturados em leads qualificados no Monday.com CRM para licenciamento de instrumentais e serviços de mixagem/masterização.
 
 ---
 
-## 🎯 Objetivo de Negócio: Prospecção & Venda B2B para Produtores de Áudio
+## Visão Geral
 
-* **A Dor Real do Mercado:** Produtores musicais e engenheiros de mixagem/masterização gastam 20+ horas semanais garimpando vocalistas manualmente no Instagram e YouTube, caindo quase sempre em dois extremos improdutivos: artistas já famosos inalcançáveis ou perfis inativos/sem orçamento.
-* **Segmentação por Gênero & Intenção Real:** O BeatMatch AI minera comunidades ativas (comentários em vídeos de "Type Beat", playlists específicas do Spotify) e utiliza o **Gemini 2.5 Flash** para distinguir semanticamente rappers/cantores em atividade de meros beatmakers concorrentes ou ouvintes passivos.
-* **Filtro de Faixa Comercial Ideal (Underground Ativo):** Aplica regras estritas de métricas (<8.000 ouvintes mensais no Spotify e faixas <10.000 plays), isolando a faixa exata de artistas que têm orçamento próprio, lançam músicas com frequência e têm demanda imediata por **beats exclusivos e finalização de áudio profissional (mix/master)**.
-* **Impacto Comercial:** Redução de **80% no ciclo de prospecção e onboarding de clientes**, entregando leads enriquecidos com contato direto de Instagram no Monday.com CRM prontos para conversão.
+Produtores musicais e estúdios de engenharia de áudio gastam horas garimpando manualmente vocalistas e artistas independentes nas redes sociais, abordando com frequência artistas inalcançáveis ou contas inativas sem orçamento para gravação.
 
----
+O BeatMatch AI automatiza esse fluxo de prospecção técnica:
+1. **Ingestão Multi-Canal:** Minera menções e candidatos em comentários do YouTube e consultas à API do Spotify.
+2. **Filtragem Semântica em Duas Etapas:** Aplica pré-filtro regex e classificação via Gemini 2.5 Flash para isolar vocalistas e letristas de produtores concorrentes e ouvintes passivos.
+3. **Reconciliação de Identidade:** Mapeia menções sociais para IDs oficiais do Spotify via chaves determinísticas SHA-256 e restrições relacionais no PostgreSQL.
+4. **Enriquecimento Social:** Localiza perfis verificados do Instagram via automação Playwright e captura métricas de streaming.
+5. **Motor de Qualidade (SIPA):** Aplica regras de viabilidade comercial (<8.000 ouvintes mensais no Spotify, catálogo ativo e remoção de spam/duplicatas) antes de sincronizar os registros no CRM Monday.com.
 
-## 🌟 Principais Recursos & Upgrades
-
-### 1. Scrapers Locais Gratuitos (Bypassing de Custos do Apify)
-Para otimizar custos operacionais, o pipeline utiliza integrações nativas de API e crawlers locais headless:
-* **YouTube Comments Miner**: Utiliza a API oficial do Google YouTube Data v3 para extrair seções de comentários em vídeos de "Type Beat".
-* **Playwright Instagram Crawler**: Implementa mecanismo de busca dupla (Yahoo Search -> Decodificador de Redirecionamento Bing Base64) via Playwright Chromium para encontrar perfis no Instagram sem disparar CAPTCHAs ou exigir proxies pagos.
-
-### 2. Classificador de Talentos Gemini 2.5 Flash AI
-Filtra ruídos utilizando o modelo Gemini da Google. Em vez de utilizar regex rígido por palavras-chave, o Gemini avalia semanticamente os comentários do YouTube para distinguir artistas emergentes reais (rappers, vocalistas) de beatmakers, ouvintes casuais ou bots de spam.
-
-### 3. Verificação Estrita de Métricas (Gatekeeping)
-O pipeline intercepta payloads do GraphQL do Spotify e faz consultas de estatísticas no YouTube para aplicar limites rígidos de artistas "underground":
-* Artistas com `> 8.000` ouvintes mensais no Spotify são ignorados automaticamente.
-* Artistas com qualquer faixa que supere `10.000` reproduções/visualizações são ignorados (`skipped_too_famous`).
-
-### 4. Arquitetura Cloud Native
-* **Google Cloud VPS (e2-medium)**: Hospeda todo o ecossistema.
-* **n8n Containerizado**: Orquestrador rodando via Docker Compose mapeado para armazenamento local.
-* **Host Script Runner**: Uma API segura em Python Flask gerenciada por `systemd` que permite ao n8n executar tarefas assíncronas em Python nativamente no SO hospedeiro, evitando inchaço do container e vazamentos de memória.
-* **Supabase PostgreSQL**: Banco de dados serverless rodando via pooler de conexões IPv4 para gerenciar a máquina de estados da fila principal.
+Para detalhes completos de arquitetura e decisões de engenharia, consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
-## 🏗️ Arquitetura do Sistema
+## Arquitetura do Sistema
 
 ```mermaid
-graph TD
-    A[Cron Triggers] -->|Mining Em Paralelo| B(Python Host Runner API)
-    B --> C[YouTube Scraper + Gemini]
-    B --> D[Spotify Wildcard Miner]
-    C & D -->|Ingestão de Leads| E[(Supabase DB Queue)]
-    
-    E -->|Poll de Pendentes| F{Máquina de Estados}
-    F -->|Sem ID| G[Spotify Resolver]
-    F -->|Sem IG| H[Playwright IG Finder]
-    
-    G & H -->|Enriquecimento| I[Filtro Estrito de Métricas]
-    I -->|Muito Famoso| J[Marcar Como Pulado]
-    I -->|Underground| K[Sincronização GraphQL Monday.com]
+flowchart LR
+    A[Agendamento / n8n] --> B[Host Runner Daemon<br/>Gunicorn / Flask]
+    B --> C[Minerador YouTube]
+    B --> D[Minerador Spotify]
+    C --> E[Classificador Gemini<br/>Talent Model]
+    D & E --> F[(PostgreSQL Fila Mestra<br/>Máquina de Estados)]
+    F --> G[Playwright Instagram Resolver]
+    F --> H[Motor de Qualidade SIPA]
+    H -->|Leads Qualificados| I[Monday.com Outreach CRM]
 ```
 
 ---
 
-## 📂 Estrutura do Repositório
+## Guia de Início Rápido (Quickstart)
 
-```text
-beatmatch_ai_automation_hub/
-├── docker-compose.yml                  # Implantação dos containers n8n
-├── beatmatch-runner.service            # Serviço Systemd para a API Host
-├── n8n/
-│   └── workflow_unified_beatmatch_http.json  # Workflow visual exportado do n8n
-├── src/
-│   ├── host_runner.py                  # API Flask para execução n8n-para-host
-│   ├── reconciler.py                   # Máquina de estados da fila principal
-│   ├── scrapers/
-│   │   ├── youtube_scraper.py          # API YT + Classificador Gemini
-│   │   ├── apify_twitter.py            # Scraper legado de Twitter
-│   │   └── spotify_miner.py            # Busca coringa regional do Spotify
-│   ├── enrichers/
-│   │   ├── spotify_resolver.py         # Resolve nomes para IDs do Spotify
-│   │   └── instagram_finder.py         # Buscador duplo com Playwright
-│   ├── quality/
-│   │   └── sipa_cleaner.py             # Limpeza e desduplicação
-│   └── utils/
-│       ├── db.py                       # Camada de conexão com Supabase DB
-│       └── export_to_monday.py         # Sincronização API Monday.com
-└── README.md
+### 1. Pré-requisitos
+* Python 3.11 ou 3.13
+* PostgreSQL 14+ (ou instância Supabase)
+* Git
+
+### 2. Instalação
+Clone o repositório e crie um ambiente virtual isolado:
+
+```bash
+git clone https://github.com/jraphaelcunha/beatmatch-ai-automation-hub.git
+cd beatmatch-ai-automation-hub
+
+python -m venv venv
+# Linux / macOS:
+source venv/bin/activate
+# Windows:
+.\venv\Scripts\Activate.ps1
+
+pip install --upgrade pip
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
+### 3. Configuração de Variáveis de Ambiente
+Copie `.env.example` para `.env` e configure suas credenciais:
+
+```bash
+cp .env.example .env
+```
+
+Principais variáveis:
+* `DATABASE_URL`: String de conexão PostgreSQL (suporta connection pooler IPv4 do Supabase na porta 6543).
+* `HOST_RUNNER_TOKEN`: Segredo obrigatório para autenticar chamadas ao runner daemon.
+* `GEMINI_API_KEY`: Chave da API Google AI Studio (opcional em modo offline / fallback).
+* `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`: Credenciais da API Spotify Developer.
+* `MONDAY_API_TOKEN` / `MONDAY_BOARD_ID`: Credenciais de integração com a API GraphQL do Monday.com.
+
+### 4. Inicialização do Banco de Dados
+Crie as tabelas, índices e restrições de verificação:
+
+```bash
+python -m src.utils.db_setup
+```
+
+### 5. Execução dos Testes Locais e Verificação de Qualidade
+```bash
+# Executar os 59 testes unitários com relatório de cobertura
+pytest tests/ -v --cov=src --cov-report=term-missing
+
+# Linter estrito com Ruff
+ruff check src/ tests/ eval/
+
+# Análise estática de segurança com Bandit
+bandit -r src/
+
+# Auditoria de vulnerabilidades em dependências
+pip-audit -r requirements.txt
+```
+
+### 6. Execução do Benchmark de LLM
+```bash
+# Modo simulado (sem consumo de cota de API)
+python eval/evaluate.py --dataset eval/dataset_template.csv --mock
+
+# Modo real (requer GEMINI_API_KEY)
+python eval/evaluate.py --dataset eval/dataset_template.csv --output-markdown eval/REPORT.md
+```
+
+### 7. Inicialização do Host Runner Daemon
+```bash
+# Servidor de desenvolvimento:
+python -m src.host_runner
+
+# Servidor de produção (Gunicorn com 4 threads):
+gunicorn --workers 1 --threads 4 --bind 127.0.0.1:5000 src.host_runner:app
 ```
 
 ---
 
-## 🚀 Como Executar e Implantar
+## Uso Responsável de Dados e Conformidade com APIs
 
-1. **Configuração do Ambiente**:
-   Clone o repositório e instale as dependências Python.
-   ```bash
-   git clone https://github.com/jraphaelbarbosa/beatmatch-ai-automation-hub.git
-   cd beatmatch-ai-automation-hub
-   python -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   playwright install chromium
-   ```
+1. **Termos de Serviço de Plataformas:**
+   * **YouTube Data API v3:** Ingestão respeita cotas diárias oficiais com paginação em lote.
+   * **Spotify Web API:** Utiliza delays aleatórios (0.5s–1.0s) e tratamento de backoff exponencial em respostas HTTP 429.
+2. **Privacidade de Dados (Alinhamento LGPD/GDPR):**
+   * Coleta restrita a links e identificadores públicos publicados abertamente por criadores para promoção profissional.
+   * `src.utils.gemini_classifier.sanitize_pii()` remove números de telefone e e-mails antes do envio para modelos externos.
+3. **Ausência de Raspagem Invasiva:** Não são capturadas mensagens diretas fechadas ou dados sob paywall.
 
-2. **Configurar o `.env`**:
-   Preencha suas chaves de API para Spotify, Gemini, YouTube, Supabase e Monday.com.
+---
 
-3. **Iniciar o Host Runner**:
-   A API Host Runner escuta na porta 5000 e executa com segurança os microserviços Python para o n8n.
-   ```bash
-   python src/host_runner.py
-   ```
+## Limitações e Próximos Passos
 
-4. **Iniciar o Orquestrador n8n**:
-   Inicie a instância containerizada do n8n e importe o workflow de `n8n/workflow_unified_beatmatch_http.json`.
-   ```bash
-   docker compose up -d
-   ```
+* **Execução Mononó:** O Host Runner isola grupos de processos (`killpg`) com confiabilidade, mas para cargas massivas distribuídas, recomenda-se transição para filas distribuídas (ex: Celery/Redis ou Kubernetes Jobs).
+* **Resiliência do Playwright:** A resolução de Instagram depende de seletores DOM em páginas de busca. A inclusão de rotação de proxies aumentará a durabilidade sob volumes intensos de consultas.
+* **Ciclo de Feedback Contínuo:** Falsos positivos identificados em produção pelo usuário devem alimentar o dataset em `eval/dataset_template.csv` para aprimorar futuros prompts.
 
-5. **Disparar o Pipeline**:
-   Ative o workflow no n8n. O sistema executará automaticamente conforme o cronograma, minerando artistas, classificando-os com IA, aplicando filtros de métricas e sincronizando leads qualificados para o seu quadro no Monday.com.
+---
+
+## Como Este Repositório Foi Construído
+
+Este projeto foi construído seguindo metodologia multiagente com governança de testes (TDD):
+* **Separação de Papéis:** Agentes especializados de Segurança, Qualidade, Avaliação Quantitativa e Revisão Independente atuaram em branches isoladas com PRs rastreados.
+* **Testes Antes da Correção:** Cada correção de vulnerabilidade ou qualidade foi acompanhada de um teste unitário comprovando a falha prévia.
+* **Zero Flags Permissivas:** Proibição de `--exit-zero`, `--ignore` injustificados ou anotações `nosec` sem explicação na mesma linha.
+* **Histórico Honesto:** Commits convencionais e datas reais de commit, documentadas em `docs/REVIEW-*.md`.
+
+---
+
+## Licença
+
+Distribuído sob a licença MIT. Consulte [LICENSE](LICENSE) para mais informações.
