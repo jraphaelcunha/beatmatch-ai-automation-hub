@@ -1,110 +1,174 @@
-# 🏆 BeatMatch AI Automation Hub — Autonomous B2B Lead Intelligence Pipeline
+# BeatMatch AI Automation Hub
 
-[![CI Quality Gate](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub)
-![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)
-![Contracts](https://img.shields.io/badge/Contracts-Pydantic%20v2-red)
-![Tests](https://img.shields.io/badge/Tests-10%20passed-brightgreen)
-![Database](https://img.shields.io/badge/Database-Supabase%2054k%20Records-green.svg)
-![Orchestration](https://img.shields.io/badge/Orchestrator-n8n%20%2B%20systemd-orange.svg)
-![LLM](https://img.shields.io/badge/Classifier-Gemini%202.5%20Flash-magenta.svg)
-![Infrastructure](https://img.shields.io/badge/Host-GCP%20Compute%20Engine-blue.svg)
+[![CI Quality Gate](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub/actions/workflows/ci.yml)
+[![Python Versions](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue?logo=python)](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub)
+[![Test Suite](https://img.shields.io/badge/Tests-59%20passed-brightgreen)](tests/)
+[![Coverage](https://img.shields.io/badge/Coverage-50.38%25-green)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Contracts](https://img.shields.io/badge/Contracts-Pydantic%20v2-red)](src/models/schemas.py)
 
-> **[ 🇧🇷 Ler em Português ](README.pt-br.md)**
-
-> **Executive Overview:** An enterprise-grade, autonomous B2B lead intelligence and data engineering pipeline engineered for **music producers, beatmakers, and audio engineering studios**. The system autonomously discovers, verifies, and qualifies emerging independent artists across Spotify, YouTube, and Instagram matched to target musical genres (e.g., Trap, Boom Bap, R&B, Drill). By filtering for high-potential indie artists within the optimal commercial bracket (<8,000 monthly listeners), it identifies qualified prospective buyers for **custom instrumental licensing (beats) and professional audio services (mixing & mastering)**, converting unstructured social signals into CRM-ready leads synced to Monday.com with 0% memory leakage across **54,000+ records**.
+> Autonomous talent discovery, verification, and qualification pipeline engineered for music producers, beatmakers, and audio engineering studios. Converts unstructured social signals into qualified, enriched prospective clients for track production, custom instrumental licensing, and mixing/mastering services.
 
 ---
 
-## 🎯 Commercial Value & Use Case: Client Acquisition for Audio Pros
+## Overview
 
-* **The Problem:** Music producers, beatmakers, and mixing/mastering engineers spend 20+ hours a week manually searching for vocalists and rappers, often pitching either mainstream artists who are unreachable or dormant accounts with no commercial budget.
-* **Targeted Genre & Intent Matching:** BeatMatch AI mines specific genre communities (e.g., "Type Beat" comment sections, genre-specific Spotify catalogs) and uses **Gemini 2.5 Flash** to semantically distinguish actual vocalists actively working on music from casual listeners.
-* **Sweet-Spot Metric Gatekeeping:** Automatically gates leads to artists with active releases but under 8,000 monthly Spotify listeners—the sweet-spot demographic that has budget and urgent need for **exclusive beats, track production, and professional mixing/mastering services**.
-* **Impact:** Shortened qualified lead acquisition cycles by **80%**, directly feeding Monday.com CRM boards with enriched Instagram contacts and catalog intelligence.
+Music producers and audio engineering studios spend hours manually searching social platforms for vocalists and indie artists, often pitching either unreachable mainstream acts or dormant accounts without commercial budgets.
+
+BeatMatch AI solves this by automating multi-channel scouting:
+1. **Multi-Source Ingestion:** Mines candidate signals across YouTube community comments and Spotify catalog queries.
+2. **Semantic Screening:** Applies a two-tier filter (regex pre-screening followed by Gemini 2.5 Flash classification) to isolate performing vocalists/songwriters from beatmakers, producers, and casual listeners.
+3. **Identity Reconciliation:** Maps temporary social mentions to official Spotify Artist IDs using deterministic SHA-256 keys and relational database constraints.
+4. **Social & Metric Enrichment:** Locates verified Instagram handles via Playwright browser automation and captures streaming metrics.
+5. **Quality Gating (SIPA Engine):** Enforces commercial sweet-spot thresholds (<8,000 monthly listeners, active release catalog, anti-spam heuristics) before syncing qualified leads into Monday.com CRM boards.
+
+For a comprehensive architectural breakdown and sequence flows, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
-## 🏗️ 1. System Architecture & Distributed Data Flow
+## System Architecture
 
 ```mermaid
-flowchart TD
-    A[Cron Schedule Trigger] -->|Asynchronous Dispatch| B[Python Host Runner API - Flask/systemd]
-    B --> C[1. YouTube Comments Miner - Data API v3]
-    B --> D[2. Spotify Catalog Scraper - Spotipy]
-    C -->|Semantic Evaluation| E[Gemini 2.5 Flash Talent Classifier]
-    D & E -->|Bulk Ingest| F[(Supabase PostgreSQL Master Queue - 54k+ Records)]
-    F --> G[3. State Machine Poller - n8n]
-    G --> H[4. Playwright Instagram Resolver]
-    G --> I[5. SIPA Quality & Deduplication Engine]
-    H & I -->|Enriched & Validated Leads| J[6. Monday.com Enterprise Outreach CRM]
+flowchart LR
+    A[Scheduled Dispatch] --> B[Host Runner Daemon<br/>Gunicorn / Flask]
+    B --> C[YouTube Comments Miner]
+    B --> D[Spotify Catalog Miner]
+    C --> E[Gemini 2.5 Flash<br/>Talent Classifier]
+    D & E --> F[(PostgreSQL Master Queue<br/>Reconciliation State Machine)]
+    F --> G[Playwright Instagram Resolver]
+    F --> H[SIPA Quality & Anti-Spam Engine]
+    H -->|Qualified Leads| I[Monday.com Outreach CRM]
 ```
 
 ---
 
-## 🛡️ 2. Enterprise Reliability & Design Decisions
+## Quickstart
 
-### ⚙️ Out-of-Container Asynchronous Host Runner (`systemd`)
-* Heavy scraping operations with headless browser instances (`playwright`) inside Docker containers caused frequent container memory exhaustion (OOM crashes) on GCP e2-medium instances.
-* **Architectural Decision:** Decoupled containerized n8n from scraping workloads by introducing a native Python Flask daemon managed by Linux `systemd` (`beatmatch-runner.service`). n8n dispatches asynchronous webhook jobs, allowing the host OS to allocate hardware memory natively with automatic service self-healing.
+### 1. Prerequisites
+* Python 3.11 or 3.13
+* PostgreSQL 14+ (or Supabase instance)
+* Git
 
-### 🧹 SIPA Quality Engine (Automated Cleaning & Anti-Spam)
-* Ingesting 54,000+ raw music profiles introduced spam and inactive accounts.
-* Built a vectorized heuristic cleaning engine (`src/quality/sipa_cleaner.py`) that identifies short names, generic keywords (`type beat`, `trap beat`), and dormant accounts (`popularity=0, followers<5`), filtering out low-quality entries before CRM ingestion.
-
-### 📐 Strict Data Contracts (Pydantic v2)
-* Built `src/models/schemas.py` defining strict type validation for `ArtistRecord`, `LeadDiscoveryPayload`, `QualityMetrics`, and `HostRunnerJob`.
-
----
-
-## 🧪 3. Automated Testing & CI Quality Gate
-
-The pipeline includes a unit test suite covering schema validation, SIPA anti-spam heuristics, and Instagram regex handle extraction.
+### 2. Installation
+Clone the repository and create an isolated virtual environment:
 
 ```bash
-# Run test suite with coverage
-pytest tests/ -v --cov=src
+git clone https://github.com/jraphaelcunha/beatmatch-ai-automation-hub.git
+cd beatmatch-ai-automation-hub
 
-# Run linter
-ruff check src/ tests/
+python -m venv venv
+# Linux / macOS:
+source venv/bin/activate
+# Windows:
+.\venv\Scripts\Activate.ps1
+
+pip install --upgrade pip
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
+### 3. Environment Configuration
+Copy `.env.example` to `.env` and configure your API credentials:
+
+```bash
+cp .env.example .env
+```
+
+Key environment variables:
+* `DATABASE_URL`: PostgreSQL connection string (supports IPv4 Supabase connection pooler on port 6543).
+* `HOST_RUNNER_TOKEN`: Mandatory random secret string used to authenticate runner webhook calls.
+* `GEMINI_API_KEY`: Google AI Studio API key (optional for offline testing with mock fallback).
+* `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`: Spotify Developer credentials.
+* `MONDAY_API_TOKEN` / `MONDAY_BOARD_ID`: Monday.com GraphQL integration token.
+
+### 4. Database Setup
+Initialize table schemas, indexes, and status constraints:
+
+```bash
+python -m src.utils.db_setup
+```
+
+### 5. Running the Quality Suite Locally
+The pipeline enforces strict local checks identical to CI:
+
+```bash
+# Run 59 unit tests with coverage reporting
+pytest tests/ -v --cov=src --cov-report=term-missing
+
+# Run Ruff linter
+ruff check src/ tests/ eval/
+
+# Run Bandit security analyzer
+bandit -r src/
+
+# Run dependency vulnerability audit
+pip-audit -r requirements.txt
+```
+
+### 6. Running LLM Evaluation Benchmark
+Evaluate the Gemini talent classification engine using the offline mock evaluator or live API:
+
+```bash
+# Offline verification mode (no API quota consumed)
+python eval/evaluate.py --dataset eval/dataset_template.csv --mock
+
+# Live benchmark mode (requires GEMINI_API_KEY)
+python eval/evaluate.py --dataset eval/dataset_template.csv --output-markdown eval/REPORT.md
+```
+
+### 7. Starting the Host Runner Daemon
+Run the task supervisor API locally:
+
+```bash
+# Development server:
+python -m src.host_runner
+
+# Production server (Gunicorn with 4 threads):
+gunicorn --workers 1 --threads 4 --bind 127.0.0.1:5000 src.host_runner:app
 ```
 
 ---
 
-## 📂 4. Canonical Repository Structure
+## LLM Evaluation & Cost Modeling
 
-```text
-beatmatch-ai-automation-hub/
-├── .github/
-│   └── workflows/
-│       └── ci.yml                     # Automated CI Quality Gate
-├── docker-compose.yml                 # Containerized n8n deployment
-├── beatmatch-runner.service           # Linux Systemd unit configuration
-├── n8n/                               # Exported n8n workflow pipelines
-├── src/
-│   ├── models/
-│   │   └── schemas.py                 # Pydantic v2 Strict Data Contracts
-│   ├── scrapers/
-│   │   ├── spotify_miner.py           # Spotify API harvesting
-│   │   ├── youtube_scraper.py         # YouTube comments data miner
-│   │   └── apify_twitter.py           # Secondary social intelligence
-│   ├── enrichers/
-│   │   ├── instagram_finder.py        # Playwright & regex profile resolver
-│   │   └── spotify_resolver.py        # Spotify ID reconciler
-│   ├── quality/
-│   │   └── sipa_cleaner.py            # Deduplication & anti-spam engine
-│   ├── host_runner.py                 # Async Flask task daemon
-│   ├── reconciler.py                  # Database state machine worker
-│   └── utils/
-│       ├── db.py                      # Supabase connection pooling
-│       └── export_to_monday.py        # Monday.com GraphQL sync
-├── scripts/
-│   └── ops/                           # Dataset inspection & DB validation tools
-├── tests/
-│   ├── conftest.py                    # Pytest Global Fixtures
-│   └── unit/
-│       ├── test_schemas.py            # Pydantic contract tests
-│       ├── test_quality_filter.py     # SIPA anti-spam heuristic tests
-│       └── test_instagram_regex.py    # Profile extraction tests
-├── requirements.txt                   # Production dependencies
-└── README.md                          # Platform documentation
-```
+The repository includes a dedicated quantitative benchmarking suite in `eval/`:
+* **Prompt Versioning:** `eval/prompts/talent_scout_v1.txt` encapsulates standardized system instructions and A&R filtering heuristics.
+* **Ground Truth Dataset:** `eval/dataset_template.csv` provides a schema template for labeling candidate leads without synthetic data generation.
+* **Cost Projection:** Based on measured average candidate evaluations (~203 input tokens, ~28 output tokens), estimated operating cost on Gemini 2.5 Flash is **$0.0236 USD per 1,000 evaluated candidates** ($0.075 / 1M input tokens, $0.30 / 1M output tokens).
+
+Full documentation on running evaluations and custom labeling is available in [eval/README.md](eval/README.md).
+
+---
+
+## Responsible Data Use & API Compliance
+
+1. **Platform Terms of Service:**
+   * **YouTube Data API v3:** Ingestion strictly respects API quota allowances (default 10,000 units/day) with batch comment fetching.
+   * **Spotify Web API:** API mining incorporates non-cryptographic random sleep intervals (0.5s–1.0s) and exponential backoff on HTTP 429 rate limit responses.
+2. **Data Privacy (LGPD & GDPR Alignment):**
+   * The pipeline collects exclusively public, creator-published professional handles and URLs intended for discovery.
+   * `src.utils.gemini_classifier.sanitize_pii()` runs regex redaction stripping private email addresses and phone numbers before dispatching text to external model APIs.
+3. **No Private Scraping:** No private user communications, closed direct messages, or paywalled data are collected.
+
+---
+
+## Limitations and Next Steps
+
+* **Single-Node Process Execution:** While the Host Runner supervisor deterministically terminates process groups (`killpg`), scaling beyond a single host will benefit from migrating to a distributed execution plane (e.g., Celery/Redis or Kubernetes Jobs) if scraping throughput exceeds single-VM IOPS.
+* **Instagram Resolver Resilience:** Browser automation via Playwright depends on stable DOM selectors on search engine landing pages. Introducing an authenticated proxy rotation layer would increase longevity under heavy query volumes.
+* **Continuous Eval Feedback Loop:** User-labeled production false positives should be piped directly back into `eval/dataset_template.csv` to fine-tune few-shot examples in future prompt revisions.
+
+---
+
+## How This Repository Was Built
+
+This project was engineered following modern multi-agent test-driven development (TDD) protocols:
+* **Role Separation:** Distinct agent roles governed security hardening (`Agente Segurança`), quality gating and SQL parameterization (`Agente Qualidade`), quantitative evaluation (`Agente Avaliação`), and independent peer review (`Agente Revisor`).
+* **Test Verification First:** Every bug fix and security hardening measure was accompanied by a unit test proving failure prior to remediation.
+* **Zero Permissive Overrides:** Prohibited use of `--exit-zero`, `--ignore` workarounds, or unannotated `noqa`/`nosec` directives.
+* **Clean History & Reproducibility:** Honest commit timestamps, conventional commit standards, and strict pull request reviews documented in `docs/REVIEW-*.md`.
+
+---
+
+## License
+
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
