@@ -9,7 +9,8 @@ import logging
 import psycopg2
 from psycopg2 import sql
 
-from src.utils.db import get_connection
+from src.models.schemas import LeadStatus, validate_transition
+from src.utils.db import get_connection, release_connection
 from src.utils.system import configure_utf8_stdout
 
 configure_utf8_stdout()
@@ -56,15 +57,15 @@ def insert_discovered_lead(
             name,
             source
         )
-        return ("mock_id", "pending_spotify")
+        return ("mock_id", LeadStatus.PENDING_SPOTIFY.value)
 
     try:
         if not spotify_id and not spotify_url:
-            status = "pending_spotify"
+            status = LeadStatus.PENDING_SPOTIFY.value
         elif not instagram_url:
-            status = "pending_instagram"
+            status = LeadStatus.PENDING_INSTAGRAM.value
         else:
-            status = "ready_for_sipa"
+            status = LeadStatus.READY_FOR_SIPA.value
 
         query = """
             INSERT INTO public.artists (
@@ -87,16 +88,17 @@ def insert_discovered_lead(
         cursor.execute(query, (
             actual_id, name, spotify_url, instagram_url, twitter_url, youtube_channel, status, source
         ))
-        conn.commit()
         result = cursor.fetchone()
+        conn.commit()
         logger.info("Discovered artist '%s' recorded in master queue. Status: %s", name, result[1])
         return result
     except Exception:
+        if not conn.closed:
+            conn.rollback()
         logger.exception("Error inserting discovered lead '%s'", name)
         return None
     finally:
-        if "conn" in locals() and conn:
-            conn.close()
+        release_connection(conn)
 
 
 def get_pending_queue(status_filter: str, limit: int = 10) -> list[tuple]:
@@ -114,22 +116,48 @@ def get_pending_queue(status_filter: str, limit: int = 10) -> list[tuple]:
         cursor.execute(query, (status_filter, limit))
         return cursor.fetchall()
     except Exception:
+        if not conn.closed:
+            conn.rollback()
         logger.exception("Error fetching pending queue for status '%s'", status_filter)
         return []
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def transition_status(
     spotify_id: str,
-    new_status: str,
+    new_status: str | LeadStatus,
     new_spotify_id: str | None = None,
-    processed_fields: dict[str, str | int | float | None] | None = None
+    processed_fields: dict[str, str | int | float | None] | None = None,
+    current_status: str | LeadStatus | None = None,
 ) -> bool:
     """
     Updates status and fields of an artist in the reconciliation queue.
+    Enforces canonical LeadStatus verification and transition validation.
     Uses psycopg2.sql and an explicit column allowlist to eliminate SQL injection risks.
     """
+    try:
+        target_status = LeadStatus(new_status).value
+    except ValueError:
+        logger.error("Disallowed status identifier for transition: '%s'", new_status)
+        return False
+
+    expected_current_status: str | None = None
+    if current_status is not None:
+        try:
+            expected_current_status = LeadStatus(current_status).value
+            if not validate_transition(expected_current_status, target_status):
+                logger.error(
+                    "Disallowed state transition from '%s' to '%s' for artist ID %s",
+                    current_status,
+                    target_status,
+                    spotify_id,
+                )
+                return False
+        except ValueError as val_err:
+            logger.error("State transition validation error: %s", val_err)
+            return False
+
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -139,7 +167,7 @@ def transition_status(
             sql.SQL("status = %s"),
             sql.SQL("processed_at = NOW()"),
         ]
-        params: list[str | int | float | None] = [new_status]
+        params: list[str | int | float | None] = [target_status]
 
         if new_spotify_id:
             sql_updates.append(sql.SQL("spotify_id = %s"))
@@ -152,17 +180,35 @@ def transition_status(
                 sql_updates.append(sql.SQL("{} = %s").format(sql.Identifier(field)))
                 params.append(val)
 
+        where_clauses = [sql.SQL("spotify_id = %s")]
         params.append(spotify_id)
 
-        query = sql.SQL("UPDATE public.artists SET {} WHERE spotify_id = %s;").format(
-            sql.SQL(", ").join(sql_updates)
+        if expected_current_status is not None:
+            where_clauses.append(sql.SQL("status = %s"))
+            params.append(expected_current_status)
+
+        query = sql.SQL("UPDATE public.artists SET {} WHERE {};").format(
+            sql.SQL(", ").join(sql_updates),
+            sql.SQL(" AND ").join(where_clauses)
         )
 
         cursor.execute(query, params)
+        if cursor.rowcount == 0:
+            logger.warning(
+                "Artist record with ID '%s' not found or status changed from '%s' during transition to '%s'",
+                spotify_id,
+                expected_current_status,
+                target_status
+            )
+            conn.rollback()
+            return False
+
         conn.commit()
         logger.info("Transitioned artist (ID: %s) to status: '%s'", spotify_id, new_status)
         return True
     except ValueError as val_err:
+        if not conn.closed:
+            conn.rollback()
         logger.error("Validation error during status transition: %s", val_err)
         return False
     except Exception as exc:
@@ -181,11 +227,16 @@ def transition_status(
                 logger.info("Successfully deleted duplicate temporary lead %s", spotify_id)
                 return True
             except Exception:
+                if not conn.closed:
+                    conn.rollback()
                 logger.exception("Failed to delete duplicate temporary lead %s", spotify_id)
+        else:
+            if not conn.closed:
+                conn.rollback()
         logger.exception("Error transitioning status for artist ID %s", spotify_id)
         return False
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 if __name__ == "__main__":
@@ -198,4 +249,4 @@ if __name__ == "__main__":
         for row in results:
             logger.info("  - %s: %d", row[0], row[1])
     finally:
-        conn.close()
+        release_connection(conn)

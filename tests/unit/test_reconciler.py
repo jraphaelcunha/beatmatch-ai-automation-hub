@@ -99,3 +99,47 @@ def test_transition_status_handles_duplicate_key_collision():
         )
         assert result is True
         mock_conn.return_value.rollback.assert_called_once()
+
+
+def test_transition_status_rejects_unrecognized_status():
+    """Unrecognized status identifier must fail immediately without database interaction."""
+    with patch("src.reconciler.get_connection") as mock_conn:
+        mock_cursor = MagicMock()
+        mock_conn.return_value.cursor.return_value = mock_cursor
+
+        result = transition_status(
+            spotify_id="test_id_123",
+            new_status="NON_CANONICAL_STATUS"
+        )
+        assert result is False
+        mock_cursor.execute.assert_not_called()
+
+
+def test_transition_status_rejects_illegal_state_transition():
+    """Disallowed state transitions (e.g., pending_spotify -> processed) must fail without database interaction."""
+    with patch("src.reconciler.get_connection") as mock_conn:
+        mock_cursor = MagicMock()
+        mock_conn.return_value.cursor.return_value = mock_cursor
+
+        result = transition_status(
+            spotify_id="test_id_123",
+            new_status="processed",
+            current_status="pending_spotify"
+        )
+        assert result is False
+        mock_cursor.execute.assert_not_called()
+
+
+def test_transition_status_allows_valid_state_transition():
+    """Valid transitions with current_status must execute database update successfully."""
+    with patch("src.reconciler.get_connection") as mock_conn:
+        mock_cursor = MagicMock()
+        mock_conn.return_value.cursor.return_value = mock_cursor
+
+        result = transition_status(
+            spotify_id="test_id_123",
+            new_status="pending_instagram",
+            current_status="pending_spotify"
+        )
+        assert result is True
+        assert mock_cursor.execute.called

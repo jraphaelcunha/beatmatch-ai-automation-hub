@@ -1,0 +1,253 @@
+{
+  "dataset_path": "eval/dataset/talent_classification_v1.jsonl",
+  "dataset_version": "v1",
+  "mode": "OFFLINE_MOCK",
+  "status_message": "Evaluation completed in mode: OFFLINE_MOCK",
+  "model_quality_claims": "NONE",
+  "confusion_matrix": {
+    "tp": 33,
+    "tn": 46,
+    "fp": 4,
+    "fn": 17
+  },
+  "summary_metrics": {
+    "total_evaluated": 100,
+    "accuracy": 0.79,
+    "precision": 0.8919,
+    "recall": 0.66,
+    "f1_score": 0.7586,
+    "failures": 0,
+    "failure_rate": 0.0,
+    "fallbacks": 0,
+    "fallback_rate": 0.0
+  },
+  "telemetry": {
+    "total_calls": 100,
+    "calls_with_telemetry": 0,
+    "calls_with_tokens": 0,
+    "total_retries": 0,
+    "missing_usage_metadata_count": 0,
+    "mean_latency_ms": null,
+    "p50_latency_ms": null,
+    "p95_latency_ms": null,
+    "p99_latency_ms": null,
+    "mean_input_tokens": null,
+    "mean_output_tokens": null,
+    "mean_total_tokens": null,
+    "mean_estimated_input_tokens": 213,
+    "mean_estimated_output_tokens": 31,
+    "model_versions_seen": []
+  },
+  "errors": [
+    {
+      "id": "tc_002",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "I'm a 19yo singer-songwriter from Atlanta. Just put out my first EP 'Midnight Th...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_004",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Hey guys, I wrote and sang this song 'Sinking Ships'. Check it out on Soundcloud...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_006",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Streaming everywhere! My new track 'Lost in Tokyo' featuring Sarah Vance. Hope y...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_007",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Lancei clipe novo no meu canal ontem! Rimas conscientes e flow underground. Pesq...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": "Kaio Real",
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_012",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Been singing soul since I was 12. Finally released my first professional track '...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_017",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Minha nova m\u00fasica de trabalho 'Desabafo' j\u00e1 est\u00e1 em todas as plataformas digitai...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": "Laryssa Mendes",
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_020",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Just released an acoustic version of my song 'Stay With Me'. Hope it touches som...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": "Elena Cruz",
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_026",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Minha arte \u00e9 minha voz. Lan\u00e7amento da semana: 'Tardes de Domingo'. Link pro clip...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_027",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Wrote this song about losing my best friend. If anyone wants to hear real emotio...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": "Tyler James",
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_032",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Flow diferenciado! Quem curtir grime brasileiro chega no meu som 'Caos Urbano' q...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_033",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "I need genuine feedback on my mix and singing on my latest track 'Breathe Again'...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_034",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Minha voz nesse instrumental casou demais. Soltei a vers\u00e3o completa 'Madrugadas'...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": "MC Nego Bala",
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_035",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "To all producers on here, I'm an R&B topliner with 5 unreleased hooks. Check my ...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_038",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "I\u2019m a 17-year-old artist trying to make it out the mud. Just dropped 'Hard Times...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_047",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Underground rap from Detroit. Just dropped 'Concrete Jungle' on all major stream...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": "Dax Richter",
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_048",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Escrevi e gravei essa can\u00e7\u00e3o em homenagem \u00e0 minha m\u00e3e: 'Amor Eterno'. Confiram n...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_050",
+      "error_type": "FALSE_NEGATIVE",
+      "text_preview": "Sou MC de BH, mandando a rima crua no som 'Fuga de Emerg\u00eancia'. Faixa dispon\u00edvel...",
+      "ground_truth": true,
+      "predicted": false,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_060",
+      "error_type": "FALSE_POSITIVE",
+      "text_preview": "Get verified on Spotify and Instagram with our PR packages. Fast turnaround, 100...",
+      "ground_truth": false,
+      "predicted": true,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_074",
+      "error_type": "FALSE_POSITIVE",
+      "text_preview": "Top Spotify Curator network accepting submissions! Reach 200,000 active monthly ...",
+      "ground_truth": false,
+      "predicted": true,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_084",
+      "error_type": "FALSE_POSITIVE",
+      "text_preview": "Servi\u00e7o de design para capas de single, banners do Spotify e visualizers para Yo...",
+      "ground_truth": false,
+      "predicted": true,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    },
+    {
+      "id": "tc_088",
+      "error_type": "FALSE_POSITIVE",
+      "text_preview": "Spotify followers and monthly listener promotion packages available. Safe and al...",
+      "ground_truth": false,
+      "predicted": true,
+      "reason": "Mock deterministic classification",
+      "expected_artist_name": null,
+      "predicted_artist_name": null
+    }
+  ]
+}

@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from src.reconciler import get_pending_queue, insert_discovered_lead, transition_status
-from src.utils.db import get_connection
+from src.utils.db import get_connection, is_database_configured, release_connection
 
 # Configure Logging
 logging.basicConfig(
@@ -83,24 +83,24 @@ def resolve_artist_spotify_details(sp, artist_name):
         logger.error(f"❌ Error searching for artist '{artist_name}' on Spotify: {e}")
         return None
 
-def run_resolver(batch_size=10):
+def run_resolver(batch_size: int = 10, allow_mock: bool = True):
     """
     Main resolver logic: pulls pending_spotify records, searches Spotify, and transitions status.
     """
     sp = get_spotify_client()
 
-    # Check if database is configured, if not, do a mock run
-    db_url = os.getenv("DATABASE_URL")
-    is_db_missing = not db_url or "db.supabase.co" in db_url or "pophmvgrzuimixksyfuz" not in db_url
-
-    # We can try to connect to verify database status
     conn = None
-    if not is_db_missing:
+    if not is_database_configured():
+        if not allow_mock:
+            logger.error("Database is not configured and mock mode is not allowed.")
+            raise RuntimeError("Database is not configured and mock mode is not allowed.")
+        logger.info("Database is not configured. Generating simulated queue of pending_spotify leads...")
+    else:
         try:
             conn = get_connection()
         except Exception as e:
-            logger.warning(f"⚠️ Could not connect to Supabase database: {e}. Falling back to MOCK database updates.")
-            conn = None
+            logger.error("Failed to connect to configured database: %s", e)
+            raise
 
     # Fetch pending queue
     pending_queue = []
@@ -117,7 +117,7 @@ def run_resolver(batch_size=10):
             logger.error("Error querying pending queue: %s", e)
             pending_queue = []
         finally:
-            conn.close()
+            release_connection(conn)
     else:
         # Simulated pending queue
         logger.info("Database connection not available. Generating simulated queue of pending_spotify leads...")
@@ -154,7 +154,8 @@ def run_resolver(batch_size=10):
                     spotify_id=temp_id,
                     new_status=next_status,
                     new_spotify_id=official_id,
-                    processed_fields=processed_fields
+                    processed_fields=processed_fields,
+                    current_status='pending_spotify'
                 )
             else:
                 success = True
@@ -169,7 +170,8 @@ def run_resolver(batch_size=10):
             if conn:
                 success = transition_status(
                     spotify_id=temp_id,
-                    new_status=next_status
+                    new_status=next_status,
+                    current_status='pending_spotify'
                 )
             else:
                 success = True

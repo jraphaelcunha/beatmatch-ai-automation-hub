@@ -10,7 +10,7 @@ import sys
 import pandas as pd
 from dotenv import load_dotenv
 
-from src.utils.db import get_connection
+from src.utils.db import get_connection, release_connection
 from src.utils.system import configure_utf8_stdout
 
 configure_utf8_stdout()
@@ -95,7 +95,7 @@ def run_sipa_engine(action: str = "dry-run", fake_action: str = "mark", dedup_st
                     logger.info("Deleted %d fake records physically.", cursor.rowcount)
                 elif fake_action == "mark":
                     cursor.execute(
-                        "UPDATE public.artists SET status = 'garbage' WHERE spotify_id = ANY(%s);",
+                        "UPDATE public.artists SET status = 'garbage', processed_at = NOW() WHERE spotify_id = ANY(%s);",
                         (fake_ids,)
                     )
                     logger.info("Updated %d fake records with status 'garbage'.", cursor.rowcount)
@@ -106,8 +106,9 @@ def run_sipa_engine(action: str = "dry-run", fake_action: str = "mark", dedup_st
 
             cursor.execute("""
                 UPDATE public.artists
-                SET status = 'ready_for_sipa'
-                WHERE (status = 'pending_enrichment' OR status = 'pending_instagram' OR status = 'pending_spotify')
+                SET status = 'ready_for_sipa',
+                    processed_at = NOW()
+                WHERE (status = 'pending_instagram' OR status = 'pending_spotify')
                   AND followers IS NOT NULL
                   AND popularity IS NOT NULL
                   AND instagram_url IS NOT NULL
@@ -122,8 +123,12 @@ def run_sipa_engine(action: str = "dry-run", fake_action: str = "mark", dedup_st
             "duplicates_count": len(ids_to_delete_dup),
             "action": action
         }
+    except Exception:
+        if not conn.closed:
+            conn.rollback()
+        raise
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 if __name__ == "__main__":

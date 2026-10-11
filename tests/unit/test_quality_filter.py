@@ -31,9 +31,9 @@ def test_preserves_real_artist_with_generic_name():
 def test_run_sipa_engine_dry_run():
     """Dry run identifies fakes and duplicates without executing database write mutations."""
     sample_data = pd.DataFrame([
-        {"spotify_id": "id1", "name": "Trap Type Beat", "popularity": 0, "followers": 1, "status": "pending_enrichment"},
-        {"spotify_id": "id2", "name": "Real Artist", "popularity": 30, "followers": 500, "status": "pending_enrichment"},
-        {"spotify_id": "id3", "name": "Real Artist", "popularity": 25, "followers": 400, "status": "pending_enrichment"},
+        {"spotify_id": "id1", "name": "Trap Type Beat", "popularity": 0, "followers": 1, "status": "pending_spotify"},
+        {"spotify_id": "id2", "name": "Real Artist", "popularity": 30, "followers": 500, "status": "pending_instagram"},
+        {"spotify_id": "id3", "name": "Real Artist", "popularity": 25, "followers": 400, "status": "pending_spotify"},
     ])
 
     mock_conn = MagicMock()
@@ -55,8 +55,8 @@ def test_run_sipa_engine_dry_run():
 def test_run_sipa_engine_apply_mark():
     """Apply mode marks fake records as garbage and commits updates."""
     sample_data = pd.DataFrame([
-        {"spotify_id": "fake_1", "name": "Trap Type Beat", "popularity": 0, "followers": 0, "status": "pending_enrichment"},
-        {"spotify_id": "artist_1", "name": "Valid Artist", "popularity": 40, "followers": 2000, "status": "pending_enrichment"},
+        {"spotify_id": "fake_1", "name": "Trap Type Beat", "popularity": 0, "followers": 0, "status": "pending_spotify"},
+        {"spotify_id": "artist_1", "name": "Valid Artist", "popularity": 40, "followers": 2000, "status": "pending_instagram"},
     ])
 
     mock_conn = MagicMock()

@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 
 from src.reconciler import transition_status
-from src.utils.db import get_connection
+from src.utils.db import get_connection, release_connection
 from src.utils.http_client import call_monday_api
 from src.utils.system import configure_utf8_stdout
 
@@ -85,21 +85,35 @@ def run_export() -> bool:
         """
         cursor.execute(query)
         records = cursor.fetchall()
+    except Exception:
+        if not conn.closed:
+            conn.rollback()
+        logger.exception("Database query failure while retrieving leads for Monday export")
+        return False
+    finally:
+        release_connection(conn)
 
-        if not records:
-            logger.info("No artists ready to be exported (status = 'ready_for_sipa').")
-            return True
+    if not records:
+        logger.info("No artists ready to be exported (status = 'ready_for_sipa').")
+        return True
 
-        logger.info("Found %d artists ready for export.", len(records))
+    logger.info("Found %d artists ready for export.", len(records))
 
-        success_count = 0
-        for r in records:
-            (
-                spotify_id, name, genres, followers, popularity,
-                spotify_url, instagram_url, twitter_url, youtube_channel,
-                scouting_source, monthly_listeners, max_song_views
-            ) = r
+    success_count = 0
+    for r in records:
+        (
+            spotify_id, name, genres, followers, popularity,
+            spotify_url, instagram_url, twitter_url, youtube_channel,
+            scouting_source, monthly_listeners, max_song_views
+        ) = r
 
+        # Phase 1: Acquire in-flight processing lock to prevent race conditions or re-export
+        if not transition_status(spotify_id, "processing", current_status="ready_for_sipa"):
+            logger.warning("Could not transition artist '%s' (ID: %s) to 'processing'. Skipping.", name, spotify_id)
+            continue
+
+        # Pre-dispatch payload preparation
+        try:
             column_values = {}
             mappings = {
                 "spotify id": spotify_id,
@@ -121,8 +135,6 @@ def run_export() -> bool:
                 if col_id:
                     column_values[col_id] = value
 
-            logger.info("Exporting artist '%s'...", name)
-
             create_query = """
             mutation ($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
               create_item (board_id: $boardId, item_name: $itemName, column_values: $columnValues, create_labels_if_missing: true) {
@@ -135,66 +147,103 @@ def run_export() -> bool:
                 "itemName": name,
                 "columnValues": json.dumps(column_values)
             }
+        except Exception as prep_err:
+            logger.exception("Pre-dispatch error preparing payload for artist '%s': %s", name, prep_err)
+            # Proven prior to sending: no network request was dispatched. Safe to revert to queue.
+            transition_status(spotify_id, "ready_for_sipa", current_status="processing")
+            continue
 
+        logger.info("Exporting artist '%s'...", name)
+
+        # Dispatch item creation mutation
+        try:
             result = _call_api(create_query, variables)
-            if "errors" in result:
-                logger.error("Monday.com API error creating item for '%s': %s", name, result["errors"])
-                continue
+        except Exception as transport_err:
+            logger.error(
+                "Transport failure or timeout during Monday.com item creation for artist '%s' (%s): %s. "
+                "Ambiguous remote outcome: retaining lead in 'processing' to prevent duplicate creation on retry.",
+                name, spotify_id, transport_err
+            )
+            # Conservative policy: do NOT revert to ready_for_sipa. Lead remains in processing.
+            continue
 
-            item_id = result.get("data", {}).get("create_item", {}).get("id")
-            if not item_id:
-                logger.error("Failed to obtain item ID for artist '%s'.", name)
-                continue
+        if not isinstance(result, dict) or "errors" in result:
+            errors_detail = result.get("errors") if isinstance(result, dict) else result
+            logger.error(
+                "Monday.com API returned GraphQL errors or invalid response for artist '%s' (%s): %s. "
+                "Ambiguous remote outcome: retaining 'processing' state to avoid automated duplicate generation.",
+                name, spotify_id, errors_detail
+            )
+            # Conservative policy: do NOT assume item was not created. Retain processing.
+            continue
 
-            genres_str = ", ".join(genres) if genres else "Unknown"
-            update_body = f"""
-            <h3>Discovered Artist: {name}</h3>
-            <p><strong>Primary Niche:</strong> {genres_str}</p>
-            <p><strong>Scouting Channel:</strong> {scouting_source.upper()}</p>
-            <hr/>
-            <h4>Performance Metrics</h4>
-            <ul>
-                <li><strong>Spotify Popularity:</strong> {popularity}/100</li>
-                <li><strong>Spotify Followers:</strong> {followers:,}</li>
-                <li><strong>Spotify Monthly Listeners:</strong> {f"{monthly_listeners:,}" if monthly_listeners else "N/A"}</li>
-                <li><strong>Max Song Views/Streams:</strong> {f"{max_song_views:,}" if max_song_views else "N/A"}</li>
-            </ul>
-            <hr/>
-            <h4>Verified Social Handles</h4>
-            <ul>
-                <li><strong>Instagram:</strong> <a href="{instagram_url or '#'}">{instagram_url or 'N/A'}</a></li>
-                <li><strong>Twitter:</strong> <a href="{twitter_url or '#'}">{twitter_url or 'N/A'}</a></li>
-                <li><strong>Spotify:</strong> <a href="{spotify_url or '#'}">{spotify_url or 'N/A'}</a></li>
-                <li><strong>YouTube:</strong> <a href="{youtube_channel or '#'}">{youtube_channel or 'N/A'}</a></li>
-            </ul>
-            """
+        data = result.get("data")
+        create_item = data.get("create_item") if isinstance(data, dict) else None
+        raw_id = create_item.get("id") if isinstance(create_item, dict) else None
+        item_id = str(raw_id).strip() if isinstance(raw_id, (str, int)) and str(raw_id).strip() else None
 
-            update_query = """
-            mutation ($itemId: ID!, $body: String!) {
-              create_update (item_id: $itemId, body: $body) {
-                id
-              }
-            }
-            """
+        if not item_id:
+            logger.error(
+                "Failed to obtain item ID for artist '%s' (%s) from Monday.com response: %s. "
+                "Ambiguous remote outcome: retaining 'processing' state to avoid automated re-creation.",
+                name, spotify_id, result
+            )
+            # Conservative policy: retain processing.
+            continue
+
+        genres_str = ", ".join(genres) if genres else "Unknown"
+        update_body = f"""
+        <h3>Discovered Artist: {name}</h3>
+        <p><strong>Primary Niche:</strong> {genres_str}</p>
+        <p><strong>Scouting Channel:</strong> {scouting_source.upper()}</p>
+        <hr/>
+        <h4>Performance Metrics</h4>
+        <ul>
+            <li><strong>Spotify Popularity:</strong> {popularity}/100</li>
+            <li><strong>Spotify Followers:</strong> {followers:,}</li>
+            <li><strong>Spotify Monthly Listeners:</strong> {f"{monthly_listeners:,}" if monthly_listeners else "N/A"}</li>
+            <li><strong>Max Song Views/Streams:</strong> {f"{max_song_views:,}" if max_song_views else "N/A"}</li>
+        </ul>
+        <hr/>
+        <h4>Verified Social Handles</h4>
+        <ul>
+            <li><strong>Instagram:</strong> <a href="{instagram_url or '#'}">{instagram_url or 'N/A'}</a></li>
+            <li><strong>Twitter:</strong> <a href="{twitter_url or '#'}">{twitter_url or 'N/A'}</a></li>
+            <li><strong>Spotify:</strong> <a href="{spotify_url or '#'}">{spotify_url or 'N/A'}</a></li>
+            <li><strong>YouTube:</strong> <a href="{youtube_channel or '#'}">{youtube_channel or 'N/A'}</a></li>
+        </ul>
+        """
+
+        update_query = """
+        mutation ($itemId: ID!, $body: String!) {
+          create_update (item_id: $itemId, body: $body) {
+            id
+          }
+        }
+        """
+        try:
             update_result = _call_api(update_query, {"itemId": str(item_id), "body": update_body})
-            if "errors" in update_result:
+            if isinstance(update_result, dict) and "errors" in update_result:
                 logger.warning("Monday.com failed to add update block for '%s': %s", name, update_result["errors"])
+        except Exception as upd_err:
+            logger.warning("Error creating update block for artist '%s' (item %s): %s", name, item_id, upd_err)
 
-            transition_status(spotify_id, "processed")
+        # Phase 2: Complete transition to PROCESSED
+        if transition_status(spotify_id, "processed", current_status="processing"):
             success_count += 1
+        else:
+            logger.error(
+                "CRITICAL: Monday item %s was created for artist '%s' (%s), but database update to 'processed' failed! "
+                "Lead remains in 'processing' to avoid automated duplicate creation on retry.",
+                item_id, name, spotify_id
+            )
 
-        logger.info(
-            "Finished Export Process. %d/%d artists successfully exported to Monday.com.",
-            success_count,
-            len(records)
-        )
-        return True
-
-    except Exception:
-        logger.exception("Database/Export execution failure")
-        return False
-    finally:
-        conn.close()
+    logger.info(
+        "Finished Export Process. %d/%d artists successfully exported to Monday.com.",
+        success_count,
+        len(records)
+    )
+    return True
 
 
 def mock_export() -> bool:

@@ -13,7 +13,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 from src.models.schemas import EnrichmentResult
 from src.reconciler import get_pending_queue, transition_status
-from src.utils.db import get_connection
+from src.utils.db import get_connection, is_database_configured, release_connection
 
 # Configure Logging
 logging.basicConfig(
@@ -302,21 +302,23 @@ def find_instagram_via_search(artist_name):
         logger.error(f"Error during local search crawl: {e}")
         return None
 
-def resolve_instagram_for_pending_artists(batch_size=5):
+def resolve_instagram_for_pending_artists(batch_size: int = 5, allow_mock: bool = True):
     """
     Main enrichment loop for resolving Instagram accounts and enforcing the
     underground metric criteria (listeners <= 8,000, song streams/views <= 10,000).
     """
-    db_url = os.getenv("DATABASE_URL")
-    is_db_missing = not db_url or "db.supabase.co" in db_url or "pophmvgrzuimixksyfuz" not in db_url
-
     conn = None
-    if not is_db_missing:
+    if not is_database_configured():
+        if not allow_mock:
+            logger.error("Database is not configured and mock mode is not allowed.")
+            raise RuntimeError("Database is not configured and mock mode is not allowed.")
+        logger.info("Database is not configured. Generating simulated queue of pending_instagram leads...")
+    else:
         try:
             conn = get_connection()
         except Exception as e:
-            logger.warning(f"Could not connect to Supabase: {e}. Falling back to MOCK database.")
-            conn = None
+            logger.error("Failed to connect to configured database: %s", e)
+            raise
 
     pending_queue = []
     if conn:
@@ -328,7 +330,7 @@ def resolve_instagram_for_pending_artists(batch_size=5):
             logger.error(f"Error querying pending queue: {e}")
             pending_queue = []
         finally:
-            conn.close()
+            release_connection(conn)
     else:
         logger.info("Database connection not available. Generating simulated queue...")
         pending_queue = [
@@ -353,7 +355,7 @@ def resolve_instagram_for_pending_artists(batch_size=5):
         if any(blacklist_name in name_lower for blacklist_name in BLACKLIST_ARTISTS):
             logger.warning(f"Blacklist match: '{artist_name}' is in the blacklist. Transitioning to 'skipped_too_famous'.")
             if conn:
-                transition_status(spotify_id, "skipped_too_famous")
+                transition_status(spotify_id, "skipped_too_famous", current_status="pending_instagram")
             else:
                 logger.info(f"[MOCK DB] Transitioned '{artist_name}' to 'skipped_too_famous'")
             skipped_count += 1
@@ -416,7 +418,8 @@ def resolve_instagram_for_pending_artists(batch_size=5):
                 transition_status(
                     spotify_id=spotify_id,
                     new_status='skipped_too_famous',
-                    processed_fields=processed_fields
+                    processed_fields=processed_fields,
+                    current_status='pending_instagram'
                 )
             else:
                 logger.info(f"[MOCK DB] Transitioned artist '{artist_name}' to 'skipped_too_famous' with fields: {processed_fields}")
@@ -436,7 +439,8 @@ def resolve_instagram_for_pending_artists(batch_size=5):
                 success = transition_status(
                     spotify_id=spotify_id,
                     new_status=next_status,
-                    processed_fields=processed_fields
+                    processed_fields=processed_fields,
+                    current_status='pending_instagram'
                 )
             else:
                 success = True
@@ -457,7 +461,8 @@ def resolve_instagram_for_pending_artists(batch_size=5):
                 success = transition_status(
                     spotify_id=spotify_id,
                     new_status=next_status,
-                    processed_fields=processed_fields
+                    processed_fields=processed_fields,
+                    current_status='pending_instagram'
                 )
             else:
                 success = True

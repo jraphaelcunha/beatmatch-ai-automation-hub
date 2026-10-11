@@ -2,8 +2,8 @@
 
 [![CI Quality Gate](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub/actions/workflows/ci.yml)
 [![Python Versions](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue?logo=python)](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub)
-[![Test Suite](https://img.shields.io/badge/Tests-59%20passed-brightgreen)](tests/)
-[![Coverage](https://img.shields.io/badge/Coverage-50.38%25-green)](pyproject.toml)
+[![Test Suite](https://img.shields.io/badge/Tests-154%20passed-brightgreen)](tests/)
+[![Coverage](https://img.shields.io/badge/Coverage-64.84%25-green)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Contracts](https://img.shields.io/badge/Contracts-Pydantic%20v2-red)](src/models/schemas.py)
 
@@ -91,7 +91,7 @@ python -m src.utils.db_setup
 The pipeline enforces strict local checks identical to CI:
 
 ```bash
-# Run 59 unit tests with coverage reporting
+# Run unit test suite (154 tests) with coverage reporting
 pytest tests/ -v --cov=src --cov-report=term-missing
 
 # Run Ruff linter
@@ -108,11 +108,11 @@ pip-audit -r requirements.txt
 Evaluate the Gemini talent classification engine using the offline mock evaluator or live API:
 
 ```bash
-# Offline verification mode (no API quota consumed)
-python eval/evaluate.py --dataset eval/dataset_template.csv --mock
+# Offline verification mode (no API quota consumed; validates pipeline arithmetic and contract)
+python eval/evaluate.py --dataset eval/dataset/talent_classification_v1.jsonl --mock
 
-# Live benchmark mode (requires GEMINI_API_KEY)
-python eval/evaluate.py --dataset eval/dataset_template.csv --output-markdown eval/REPORT.md
+# Live benchmark mode (requires valid GEMINI_API_KEY in .env)
+python eval/evaluate.py --dataset eval/dataset/talent_classification_v1.jsonl --output-markdown eval/reports/live_benchmark_v1.md
 ```
 
 ### 7. Starting the Host Runner Daemon
@@ -128,12 +128,12 @@ gunicorn --workers 1 --threads 4 --bind 127.0.0.1:5000 src.host_runner:app
 
 ---
 
-## LLM Evaluation & Cost Modeling
+## LLM Evaluation & Benchmarking
 
 The repository includes a dedicated quantitative benchmarking suite in `eval/`:
 * **Prompt Versioning:** `eval/prompts/talent_scout_v1.txt` encapsulates standardized system instructions and A&R filtering heuristics.
-* **Ground Truth Dataset:** `eval/dataset_template.csv` provides a schema template for labeling candidate leads without synthetic data generation.
-* **Cost Projection:** Based on measured average candidate evaluations (~203 input tokens, ~28 output tokens), estimated operating cost on Gemini 2.5 Flash is **$0.0236 USD per 1,000 evaluated candidates** ($0.075 / 1M input tokens, $0.30 / 1M output tokens).
+* **Synthetic Evaluation Dataset:** `eval/dataset/talent_classification_v1.jsonl` provides a 100-sample balanced synthetic dataset (50 artist promotions / 50 non-promotions) designed to validate evaluator execution, data contracts, and offline metric calculation without constituting a real-world reference benchmark to prove Gemini model quality.
+* **Evaluation Harness:** Computes standard confusion matrix metrics (Accuracy, Precision, Recall, F1-Score) and latency percentiles (p50, p95), with strict separation between live provider telemetry and offline mock execution.
 
 Full documentation on running evaluations and custom labeling is available in [eval/README.md](eval/README.md).
 
@@ -155,7 +155,7 @@ Full documentation on running evaluations and custom labeling is available in [e
 
 * **Single-Node Process Execution:** While the Host Runner supervisor deterministically terminates process groups (`killpg`), scaling beyond a single host will benefit from migrating to a distributed execution plane (e.g., Celery/Redis or Kubernetes Jobs) if scraping throughput exceeds single-VM IOPS.
 * **Instagram Resolver Resilience:** Browser automation via Playwright depends on stable DOM selectors on search engine landing pages. Introducing an authenticated proxy rotation layer would increase longevity under heavy query volumes.
-* **Continuous Eval Feedback Loop:** User-labeled production false positives should be piped directly back into `eval/dataset_template.csv` to fine-tune few-shot examples in future prompt revisions.
+* **Continuous Eval Feedback Loop:** User-labeled production false positives should be piped directly back into `eval/dataset/talent_classification_v1.jsonl` to fine-tune few-shot examples in future prompt revisions.
 
 ---
 

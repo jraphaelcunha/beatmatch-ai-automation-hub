@@ -4,7 +4,7 @@ Pytest global fixtures and configurations for BeatMatch AI Automation Hub test s
 
 import pytest
 
-from src.models.schemas import ArtistRecord, LeadDiscoveryPayload
+from src.models.schemas import ArtistRecord, LeadDiscoveryPayload, LeadStatus
 
 
 @pytest.fixture
@@ -15,7 +15,7 @@ def sample_artist_record():
         name="Kaytranada",
         followers=2450000,
         popularity=72,
-        status="ACTIVE",
+        status=LeadStatus.READY_FOR_SIPA,
         genres=["electronic", "hip hop", "r&b"],
         instagram_url="https://www.instagram.com/kaytranada"
     )
