@@ -7,6 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Contracts](https://img.shields.io/badge/Contracts-Pydantic%20v2-red)](src/models/schemas.py)
 
+> **[ 🇧🇷 Ler em Português ](README.pt-br.md)**
+
 > Autonomous talent discovery, verification, and qualification pipeline engineered for music producers, beatmakers, and audio engineering studios. Converts unstructured social signals into qualified, enriched prospective clients for track production, custom instrumental licensing, and mixing/mastering services.
 
 ---
@@ -23,6 +25,14 @@ BeatMatch AI solves this by automating multi-channel scouting:
 5. **Quality Gating (SIPA Engine):** Enforces commercial sweet-spot thresholds (<8,000 monthly listeners, active release catalog, anti-spam heuristics) before syncing qualified leads into Monday.com CRM boards.
 
 For a comprehensive architectural breakdown and sequence flows, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## Intellectual Property & Data Sanitization Governance
+
+> [!NOTE]
+> **Sanitized Reference Architecture (NDA Compliant):**
+> This public repository serves as a sanitized engineering reference architecture. All proprietary client lists, production credentials, operator webhooks, and commercial databases remain strictly private under NDA. All bundled evaluation fixtures (`eval/dataset/talent_classification_v1.jsonl`) and unit test mocks are synthetic datasets created strictly for offline verification and deterministic CI testing.
 
 ---
 
@@ -64,6 +74,7 @@ source venv/bin/activate
 
 pip install --upgrade pip
 pip install -r requirements.txt -r requirements-dev.txt
+playwright install chromium
 ```
 
 ### 3. Environment Configuration
@@ -88,7 +99,7 @@ python -m src.utils.db_setup
 ```
 
 ### 5. Running the Quality Suite Locally
-The pipeline enforces strict local checks identical to CI:
+The following local checks cover the main CI quality gates:
 
 ```bash
 # Run unit test suite (154 tests) with coverage reporting
@@ -155,14 +166,14 @@ Full documentation on running evaluations and custom labeling is available in [e
 
 * **Single-Node Process Execution:** While the Host Runner supervisor deterministically terminates process groups (`killpg`), scaling beyond a single host will benefit from migrating to a distributed execution plane (e.g., Celery/Redis or Kubernetes Jobs) if scraping throughput exceeds single-VM IOPS.
 * **Instagram Resolver Resilience:** Browser automation via Playwright depends on stable DOM selectors on search engine landing pages. Introducing an authenticated proxy rotation layer would increase longevity under heavy query volumes.
-* **Continuous Eval Feedback Loop:** User-labeled production false positives should be piped directly back into `eval/dataset/talent_classification_v1.jsonl` to fine-tune few-shot examples in future prompt revisions.
+* **Continuous Eval Feedback Loop:** False positives identified during validation or operation should be logged into the external annotation template (`eval/dataset_template.csv`) for human review and labeling before inclusion in a future evaluation dataset release, preserving the v1 synthetic dataset as a stable versioned reference.
 
 ---
 
 ## How This Repository Was Built
 
 This project was engineered following modern multi-agent test-driven development (TDD) protocols:
-* **Role Separation:** Distinct agent roles governed security hardening (`Agente Segurança`), quality gating and SQL parameterization (`Agente Qualidade`), quantitative evaluation (`Agente Avaliação`), and independent peer review (`Agente Revisor`).
+* **Role Separation:** Distinct review scopes governed security hardening (`Security Auditor`), quality gating and SQL parameterization (`Quality & SQL Parameterization`), quantitative evaluation (`Quantitative Evaluation`), and independent peer review (`Independent Peer Reviewer`).
 * **Test Verification First:** Every bug fix and security hardening measure was accompanied by a unit test proving failure prior to remediation.
 * **Zero Permissive Overrides:** Prohibited use of `--exit-zero`, `--ignore` workarounds, or unannotated `noqa`/`nosec` directives.
 * **Clean History & Reproducibility:** Honest commit timestamps, conventional commit standards, and strict pull request reviews documented in `docs/REVIEW-*.md`.

@@ -1,9 +1,9 @@
 # BeatMatch AI Automation Hub
 
-[![CI Quality Gate](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub)
+[![CI Quality Gate](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub/actions/workflows/ci.yml)
 [![Python Versions](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue?logo=python)](https://github.com/jraphaelcunha/beatmatch-ai-automation-hub)
-[![Test Suite](https://img.shields.io/badge/Tests-59%20passed-brightgreen)](tests/)
-[![Coverage](https://img.shields.io/badge/Coverage-50.38%25-green)](pyproject.toml)
+[![Test Suite](https://img.shields.io/badge/Tests-154%20passed-brightgreen)](tests/)
+[![Coverage](https://img.shields.io/badge/Coverage-64.84%25-green)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Contracts](https://img.shields.io/badge/Contracts-Pydantic%20v2-red)](src/models/schemas.py)
 
@@ -25,6 +25,14 @@ O BeatMatch AI automatiza esse fluxo de prospecção técnica:
 5. **Motor de Qualidade (SIPA):** Aplica regras de viabilidade comercial (<8.000 ouvintes mensais no Spotify, catálogo ativo e remoção de spam/duplicatas) antes de sincronizar os registros no CRM Monday.com.
 
 Para detalhes completos de arquitetura e decisões de engenharia, consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## Governança de Propriedade Intelectual e Sanitização
+
+> [!NOTE]
+> **Arquitetura de Referência Sanitizada (NDA):**
+> Este repositório público atua como arquitetura de referência sanitizada. Credenciais de produção, listas comerciais privadas, webhooks de operação e bases proprietárias permanecem estritamente confidenciais sob NDA. Todos os casos de avaliação em `eval/dataset/talent_classification_v1.jsonl` e os mocks de teste são dados sintéticos criados exclusivamente para verificação técnica e CI determinística.
 
 ---
 
@@ -66,6 +74,7 @@ source venv/bin/activate
 
 pip install --upgrade pip
 pip install -r requirements.txt -r requirements-dev.txt
+playwright install chromium
 ```
 
 ### 3. Configuração de Variáveis de Ambiente
@@ -90,8 +99,10 @@ python -m src.utils.db_setup
 ```
 
 ### 5. Execução dos Testes Locais e Verificação de Qualidade
+As verificações locais abaixo cobrem os principais quality gates da CI:
+
 ```bash
-# Executar os 59 testes unitários com relatório de cobertura
+# Executar a suíte de testes unitários (154 testes) com relatório de cobertura
 pytest tests/ -v --cov=src --cov-report=term-missing
 
 # Linter estrito com Ruff
@@ -104,16 +115,20 @@ bandit -r src/
 pip-audit -r requirements.txt
 ```
 
-### 6. Execução do Benchmark de LLM
-```bash
-# Modo simulado (sem consumo de cota de API)
-python eval/evaluate.py --dataset eval/dataset_template.csv --mock
+### 6. Execução da Avaliação de LLM
+Avalie o motor de classificação de talentos via Gemini usando o avaliador mock offline ou a API live:
 
-# Modo real (requer GEMINI_API_KEY)
-python eval/evaluate.py --dataset eval/dataset_template.csv --output-markdown eval/REPORT.md
+```bash
+# Modo de verificação offline (sem consumo de cota de API; valida aritmética da pipeline e contratos)
+python eval/evaluate.py --dataset eval/dataset/talent_classification_v1.jsonl --mock
+
+# Modo benchmark live (requer GEMINI_API_KEY configurada no .env)
+python eval/evaluate.py --dataset eval/dataset/talent_classification_v1.jsonl --output-markdown eval/reports/live_benchmark_v1.md
 ```
 
 ### 7. Inicialização do Host Runner Daemon
+Execute o supervisor de tarefas API localmente:
+
 ```bash
 # Servidor de desenvolvimento:
 python -m src.host_runner
@@ -124,10 +139,21 @@ gunicorn --workers 1 --threads 4 --bind 127.0.0.1:5000 src.host_runner:app
 
 ---
 
+## Avaliação de LLM & Benchmarking
+
+O repositório inclui uma suíte dedicada de validação quantitativa em `eval/`:
+* **Versionamento de Prompts:** `eval/prompts/talent_scout_v1.txt` encapsula as instruções de sistema padronizadas e heurísticas de filtragem A&R.
+* **Conjunto de Avaliação Sintética:** `eval/dataset/talent_classification_v1.jsonl` fornece um conjunto balanceado de 100 amostras sintéticas (50 promoções de artistas / 50 não-promoções) projetado para validar a execução do avaliador, os contratos de dados e o cálculo das métricas offline, sem constituir um benchmark de referência real para comprovar a qualidade do modelo Gemini em produção.
+* **Harness de Avaliação:** Computa métricas padrão de matriz de confusão (Acurácia, Precisão, Revocação, F1-Score) e percentis de latência (p50, p95), com separação estrita entre telemetria real do provider e execução simulada offline (mock).
+
+A documentação completa sobre a metodologia de avaliação e execução está disponível em [eval/README.pt-br.md](eval/README.pt-br.md).
+
+---
+
 ## Uso Responsável de Dados e Conformidade com APIs
 
 1. **Termos de Serviço de Plataformas:**
-   * **YouTube Data API v3:** Ingestão respeita cotas diárias oficiais com paginação em lote.
+   * **YouTube Data API v3:** A ingestão deve respeitar as cotas atribuídas ao projeto e os termos aplicáveis da API.
    * **Spotify Web API:** Utiliza delays aleatórios (0.5s–1.0s) e tratamento de backoff exponencial em respostas HTTP 429.
 2. **Privacidade de Dados (Alinhamento LGPD/GDPR):**
    * Coleta restrita a links e identificadores públicos publicados abertamente por criadores para promoção profissional.
@@ -140,7 +166,7 @@ gunicorn --workers 1 --threads 4 --bind 127.0.0.1:5000 src.host_runner:app
 
 * **Execução Mononó:** O Host Runner isola grupos de processos (`killpg`) com confiabilidade, mas para cargas massivas distribuídas, recomenda-se transição para filas distribuídas (ex: Celery/Redis ou Kubernetes Jobs).
 * **Resiliência do Playwright:** A resolução de Instagram depende de seletores DOM em páginas de busca. A inclusão de rotação de proxies aumentará a durabilidade sob volumes intensos de consultas.
-* **Ciclo de Feedback Contínuo:** Falsos positivos identificados em produção pelo usuário devem alimentar o dataset em `eval/dataset_template.csv` para aprimorar futuros prompts.
+* **Ciclo de Feedback Contínuo:** Falsos positivos identificados durante a validação ou operação devem ser registrados no template de anotação externa (`eval/dataset_template.csv`) para revisão humana e rotulagem, antes de integrarem uma futura versão do conjunto de avaliação, preservando o dataset sintético v1 como referência versionada estável.
 
 ---
 
