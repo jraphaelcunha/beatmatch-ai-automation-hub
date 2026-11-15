@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
+from src.quality import sipa_cleaner
 from src.quality.sipa_cleaner import is_fake_profile, run_sipa_engine
 
 
@@ -71,3 +72,23 @@ def test_run_sipa_engine_apply_mark():
         assert summary["fakes_count"] == 1
         assert summary["action"] == "apply"
         assert mock_conn.commit.called
+
+
+def test_sipa_cleaner_cli_supports_dry_run_flag():
+    """CLI entrypoint must accept --dry-run and route to action='dry-run' without exiting 2."""
+    with patch("src.quality.sipa_cleaner.get_connection") as mock_get_conn, \
+         patch("src.quality.sipa_cleaner.release_connection"), \
+         patch("pandas.read_sql_query") as mock_sql:
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = [0]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_conn.return_value = mock_conn
+        mock_sql.return_value = pd.DataFrame(
+            columns=["spotify_id", "name", "followers", "popularity", "status"]
+        )
+
+        summary = sipa_cleaner.main(["--dry-run"])
+        assert summary["action"] == "dry-run"
+        assert mock_conn.commit.call_count == 0
+

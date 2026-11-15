@@ -64,7 +64,7 @@ ALLOWED_SCRIPT_FLAGS: dict[str, set[str]] = {
     "spotify_miner": {"--limit", "--genre", "--market"},
     "spotify_resolver": {"--batch-size", "--retry"},
     "instagram_finder": {"--batch-size", "--concurrency"},
-    "sipa_cleaner": {"--dry-run", "--threshold"},
+    "sipa_cleaner": {"--dry-run", "--threshold", "--action", "--fake-action", "--dedup-strategy"},
     "export_to_monday": {"--board-id", "--batch-size"},
     "reconciler": {"--dry-run", "--limit"},
 }

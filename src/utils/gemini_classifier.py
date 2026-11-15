@@ -14,6 +14,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -25,6 +26,21 @@ logger = logging.getLogger("gemini_classifier")
 EMAIL_REGEX = re.compile(r'[\w\.-]+@[\w\.-]+\.\w+')
 PHONE_REGEX = re.compile(r'(?:\+?55\s?)?(?:\(?\d{2}\)?\s?)?(?:9\d{4}|\d{4})[-.\s]?\d{4}')
 CPF_SSN_REGEX = re.compile(r'\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b|\b\d{3}-\d{2}-\d{4}\b')
+
+
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    """Parse boolean flags safely without treating string literals like 'false' as truthy."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no", ""}:
+            return False
+    return default
 
 
 def sanitize_pii(text: str) -> str:
@@ -181,7 +197,9 @@ def classify_lead_with_gemini(
                 )
 
             return TalentClassificationResult(
-                is_artist_promotion=bool(extracted_json.get("is_artist_promotion", False)),
+                is_artist_promotion=_coerce_bool(
+                    extracted_json.get("is_artist_promotion", False), default=False
+                ),
                 artist_name=extracted_json.get("artist_name"),
                 reason=str(extracted_json.get("reason", "")),
                 confidence=float(extracted_json.get("confidence", 0.8)),

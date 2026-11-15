@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 # Ensure project root is in the path for absolute imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from src.reconciler import get_pending_queue, insert_discovered_lead, transition_status
+from src.reconciler import get_pending_queue, transition_status
 from src.utils.db import get_connection, is_database_configured, release_connection
 
 # Configure Logging
@@ -107,12 +107,9 @@ def run_resolver(batch_size: int = 10, allow_mock: bool = True):
     if conn:
         try:
             pending_queue = get_pending_queue('pending_spotify', limit=batch_size)
-            # If no pending records are found, let's inject a few test records for demonstration
             if not pending_queue:
-                logger.info("No pending_spotify artists found in database. Inserting mock records for demo...")
-                insert_discovered_lead("Lil Shifty", source="youtube_comment")
-                insert_discovered_lead("BeatMaker99", source="youtube_comment")
-                pending_queue = get_pending_queue('pending_spotify', limit=batch_size)
+                logger.info("No pending_spotify artists found in database queue.")
+                return 0
         except Exception as e:
             logger.error("Error querying pending queue: %s", e)
             pending_queue = []

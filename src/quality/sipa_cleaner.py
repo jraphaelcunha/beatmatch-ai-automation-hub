@@ -131,15 +131,26 @@ def run_sipa_engine(action: str = "dry-run", fake_action: str = "mark", dedup_st
         release_connection(conn)
 
 
-if __name__ == "__main__":
+def parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse CLI arguments for the SIPA cleaning engine."""
     parser = argparse.ArgumentParser(description="SIPA Engine - Unified Pipeline Quality & Cleansing")
     parser.add_argument("--action", type=str, choices=["dry-run", "apply"], default="dry-run")
+    parser.add_argument("--dry-run", action="store_true", help="Alias for --action dry-run")
     parser.add_argument("--fake-action", type=str, choices=["delete", "mark"], default="mark")
     parser.add_argument("--dedup-strategy", type=str, choices=["keep-best"], default="keep-best")
-    args = parser.parse_args()
+    return parser.parse_args(argv)
 
-    run_sipa_engine(
-        action=args.action,
+
+def main(argv: list[str] | None = None) -> dict:
+    """CLI entrypoint for SIPA Engine execution."""
+    args = parse_cli_args(argv)
+    effective_action = "dry-run" if args.dry_run else args.action
+    return run_sipa_engine(
+        action=effective_action,
         fake_action=args.fake_action,
-        dedup_strategy=args.dedup_strategy
+        dedup_strategy=args.dedup_strategy,
     )
+
+
+if __name__ == "__main__":
+    main()
