@@ -345,3 +345,32 @@ def test_gemini_error_on_empty_candidates_or_malformed_json():
         res_bad = classify_lead_with_gemini("Test comment")
         assert res_bad.status == "ERROR"
         assert "json" in res_bad.reason.lower()
+
+
+def test_gemini_string_false_booleans_coerce_to_false():
+    """String 'false'/'0'/'no' from LLM JSON must never evaluate truthy via bool()."""
+    for raw_flag in ("false", "FALSE", "0", "no", ""):
+        mock_payload = {
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": json.dumps({
+                            "is_artist_promotion": raw_flag,
+                            "artist_name": None,
+                            "reason": "Casual fan reaction",
+                            "confidence": 0.92,
+                        })
+                    }]
+                }
+            }]
+        }
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(mock_payload).encode("utf-8")
+        mock_resp.__enter__.return_value = mock_resp
+
+        with patch.dict("os.environ", {"GEMINI_API_KEY": "AIzaSyFakeKeyValidFormat12345"}), \
+             patch("urllib.request.urlopen", return_value=mock_resp):
+            result = classify_lead_with_gemini("Fire track bro!")
+            assert result.status == "SUCCESS"
+            assert result.is_artist_promotion is False
+

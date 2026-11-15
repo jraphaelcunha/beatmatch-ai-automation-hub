@@ -67,7 +67,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.HOST_RUNNER_TOKEN }}"
+              "value": "=Bearer {{ $env.HOST_RUNNER_TOKEN }}"
             }
           ]
         },
@@ -111,7 +111,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.HOST_RUNNER_TOKEN }}"
+              "value": "=Bearer {{ $env.HOST_RUNNER_TOKEN }}"
             }
           ]
         },
@@ -153,7 +153,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.HOST_RUNNER_TOKEN }}"
+              "value": "=Bearer {{ $env.HOST_RUNNER_TOKEN }}"
             }
           ]
         },
@@ -279,7 +279,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.HOST_RUNNER_TOKEN }}"
+              "value": "=Bearer {{ $env.HOST_RUNNER_TOKEN }}"
             }
           ]
         },
@@ -304,7 +304,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.HOST_RUNNER_TOKEN }}"
+              "value": "=Bearer {{ $env.HOST_RUNNER_TOKEN }}"
             }
           ]
         },
@@ -367,9 +367,9 @@
         "filters": {
           "conditions": [
             {
-              "key": "id",
+              "key": "spotify_id",
               "operator": "eq",
-              "value": "={{$json.id}}"
+              "value": "={{$json.spotify_id}}"
             }
           ]
         }
@@ -419,7 +419,7 @@
       "parameters": {
         "operation": "update",
         "table": "artists",
-        "id": "={{$json.id}}",
+        "id": "={{ $json.spotify_id || $('Supabase - Fetch Metrics').item.json.spotify_id }}",
         "fields": [
           "status"
         ]
@@ -442,7 +442,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.HOST_RUNNER_TOKEN }}"
+              "value": "=Bearer {{ $env.HOST_RUNNER_TOKEN }}"
             }
           ]
         },
@@ -452,14 +452,105 @@
         "options": {}
       },
       "id": "sipa-cleaner-id",
-      "name": "6. Gemini 2.5 Flash - Talent Semantic Classifier",
+      "name": "6. SIPA Quality & Cleansing Gate",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
         1300,
         100
-      ],
-      "iconUrl": "https://img.icons8.com/fluency/48/gemini-ai.png"
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "wait-sipa-job-id",
+      "name": "Wait - SIPA Async Job",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1425,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://host.docker.internal:5000/jobs/{{ $('6. SIPA Quality & Cleansing Gate').item.json.job_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.HOST_RUNNER_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "poll-sipa-job-id",
+      "name": "Poll SIPA Job Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1550,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "type": "string"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "COMPLETED",
+              "operator": "string.equals"
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-sipa-completed-id",
+      "name": "IF - SIPA Job Completed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1675,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "type": "string"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "RUNNING",
+              "operator": "string.equals"
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-sipa-running-id",
+      "name": "IF - SIPA Still Running?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1675,
+        240
+      ]
     },
     {
       "parameters": {
@@ -470,7 +561,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.HOST_RUNNER_TOKEN }}"
+              "value": "=Bearer {{ $env.HOST_RUNNER_TOKEN }}"
             }
           ]
         },
@@ -489,7 +580,7 @@
       "parameters": {
         "operation": "update",
         "table": "artists",
-        "id": "={{$json.id}}",
+        "id": "={{ $json.spotify_id || $('Supabase - Fetch Metrics').item.json.spotify_id }}",
         "fields": [
           "status"
         ]
@@ -658,7 +749,7 @@
       "main": [
         [
           {
-            "node": "6. Gemini 2.5 Flash - Talent Semantic Classifier",
+            "node": "6. SIPA Quality & Cleansing Gate",
             "type": "main",
             "index": 0
           }
@@ -672,11 +763,62 @@
         ]
       ]
     },
-    "6. Gemini 2.5 Flash - Talent Semantic Classifier": {
+    "6. SIPA Quality & Cleansing Gate": {
+      "main": [
+        [
+          {
+            "node": "Wait - SIPA Async Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait - SIPA Async Job": {
+      "main": [
+        [
+          {
+            "node": "Poll SIPA Job Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll SIPA Job Status": {
+      "main": [
+        [
+          {
+            "node": "IF - SIPA Job Completed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - SIPA Job Completed?": {
       "main": [
         [
           {
             "node": "7. Monday.com GraphQL Exporter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF - SIPA Still Running?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - SIPA Still Running?": {
+      "main": [
+        [
+          {
+            "node": "Wait - SIPA Async Job",
             "type": "main",
             "index": 0
           }

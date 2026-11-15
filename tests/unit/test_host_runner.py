@@ -224,3 +224,20 @@ def test_timeout_kills_process_fallback_when_no_killpg():
         mock_proc.kill.assert_called_once()
         assert mock_proc.wait.call_count == 2
 
+
+def test_run_sipa_cleaner_accepts_n8n_contract_flags(client, auth_headers):
+    """Host runner allowlist for sipa_cleaner must accept CLI flags invoked by n8n workflow."""
+    with patch("src.host_runner.threading.Thread") as mock_thread, \
+         patch("os.path.exists", return_value=True):
+        mock_thread.return_value = MagicMock()
+        response = client.post(
+            "/run/sipa_cleaner",
+            headers=auth_headers,
+            json={"args": ["--action", "apply", "--fake-action", "delete"]},
+        )
+        assert response.status_code == 202
+        data = response.get_json()
+        assert data["script"] == "sipa_cleaner"
+        assert data["status"] == "queued"
+
+

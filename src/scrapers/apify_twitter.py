@@ -6,6 +6,7 @@ import sys
 from dotenv import load_dotenv
 
 from src.reconciler import insert_discovered_lead
+from src.utils.db import is_database_configured
 from src.utils.gemini_classifier import classify_lead_with_gemini
 from src.utils.system import configure_utf8_stdout
 
@@ -51,6 +52,9 @@ def scrape_tweets(queries=None, max_tweets=30):
     search_terms = queries or SEARCH_QUERIES
 
     if is_token_missing:
+        if is_database_configured():
+            logger.warning("⚠️ APIFY_TOKEN is unconfigured while live DB is active; skipping mock fallback.")
+            return []
         logger.warning("⚠️ APIFY_TOKEN is not configured or is a placeholder. Running in MOCK MODE.")
         return get_mock_tweets()
 
@@ -83,6 +87,9 @@ def scrape_tweets(queries=None, max_tweets=30):
         tweets_found = [t for t in tweets_found if not t.get("noResults")]
 
         if not tweets_found:
+            if is_database_configured():
+                logger.warning("⚠️ No valid tweets found; skipping mock fallback for live database.")
+                return []
             logger.warning("⚠️ No valid tweets found (possibly due to Apify pricing/plan limits). Falling back to MOCK MODE.")
             return get_mock_tweets()
 
@@ -90,6 +97,9 @@ def scrape_tweets(queries=None, max_tweets=30):
         return tweets_found
 
     except Exception as e:
+        if is_database_configured():
+            logger.error(f"❌ Error calling Apify Twitter Scraper: {e}. Returning empty list.")
+            return []
         logger.error(f"❌ Error calling Apify Twitter Scraper: {e}. Falling back to MOCK MODE.")
         return get_mock_tweets()
 
@@ -106,7 +116,8 @@ def get_mock_tweets():
                 "id_str": "11111111"
             },
             "full_text": "Need beats for my upcoming EP. Drop your soundcloud/spotify links! Trap only. send to kplugg@email.com",
-            "created_at": "2026-06-07T02:00:00Z"
+            "created_at": "2026-06-07T02:00:00Z",
+            "_is_mock": True
         },
         {
             "user": {
@@ -115,7 +126,8 @@ def get_mock_tweets():
                 "id_str": "22222222"
             },
             "full_text": "Check out my new single on Spotify! https://open.spotify.com/artist/3TVXtAsR1Inumwj472S9r4 plugg trap vibes",
-            "created_at": "2026-06-07T02:05:00Z"
+            "created_at": "2026-06-07T02:05:00Z",
+            "_is_mock": True
         },
         {
             "user": {
@@ -124,7 +136,8 @@ def get_mock_tweets():
                 "id_str": "33333333"
             },
             "full_text": "Send beats rap trap boom bap to slimylil@beats.com. Need beats asap!",
-            "created_at": "2026-06-07T02:10:00Z"
+            "created_at": "2026-06-07T02:10:00Z",
+            "_is_mock": True
         },
         {
             "user": {
@@ -133,7 +146,8 @@ def get_mock_tweets():
                 "id_str": "44444444"
             },
             "full_text": "Just dropped a fresh playlist for upcoming rappers. Check it.",
-            "created_at": "2026-06-07T02:15:00Z"
+            "created_at": "2026-06-07T02:15:00Z",
+            "_is_mock": True
         }
     ]
 
@@ -143,8 +157,12 @@ def parse_and_insert_tweets(tweets):
     Uses Gemini 2.5 Flash for talent verification.
     """
     inserted_count = 0
+    live_db = is_database_configured()
 
     for tweet in tweets:
+        if live_db and tweet.get("_is_mock"):
+            logger.warning("Skipping synthetic mock tweet insertion while live database is configured.")
+            continue
         user_info = tweet.get("user", {})
         screen_name = user_info.get("screen_name")
         display_name = user_info.get("name")

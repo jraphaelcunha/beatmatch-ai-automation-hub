@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from src.reconciler import insert_discovered_lead
+from src.utils.db import is_database_configured
 
 # Configure Logging
 logging.basicConfig(
@@ -136,6 +137,9 @@ def mine_spotify_artists(sp):
     Queries Spotify Search API using regional wildcards and filters on-the-fly.
     """
     if not sp:
+        if is_database_configured():
+            logger.warning("Spotify client unavailable while live DB is active; skipping mock seed.")
+            return []
         return get_mock_artists()
 
     all_terms = generate_search_terms()
@@ -230,7 +234,8 @@ def get_mock_artists():
             "spotify_url": "https://open.spotify.com/artist/mock_emerging_1",
             "popularity": 5,
             "followers": 120,
-            "genres": ["underground rap", "trap"]
+            "genres": ["underground rap", "trap"],
+            "_is_mock": True,
         },
         {
             "name": "Niche Alt R&B Singer",
@@ -238,16 +243,22 @@ def get_mock_artists():
             "spotify_url": "https://open.spotify.com/artist/mock_emerging_2",
             "popularity": 7,
             "followers": 340,
-            "genres": ["alternative r&b", "soul"]
+            "genres": ["alternative r&b", "soul"],
+            "_is_mock": True,
         }
     ]
 
+
 def insert_discovered_artists(artists):
     inserted_count = 0
+    live_db = is_database_configured()
     for artist in artists:
         name = artist["name"]
         spotify_id = artist["spotify_id"]
         spotify_url = artist["spotify_url"]
+        if live_db and (artist.get("_is_mock") or str(spotify_id).startswith("mock_")):
+            logger.warning("Skipping synthetic mock artist '%s' while live database is configured.", name)
+            continue
 
         logger.info(
             "Registering discovered artist '%s' (Popularity: %s, Followers: %s)",

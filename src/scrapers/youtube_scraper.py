@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from dotenv import load_dotenv
 
 from src.reconciler import insert_discovered_lead
+from src.utils.db import is_database_configured
 from src.utils.gemini_classifier import classify_lead_with_gemini
 from src.utils.http_client import safe_http_get
 from src.utils.system import configure_utf8_stdout
@@ -115,6 +116,11 @@ def scrape_youtube_comments(video_urls: list[str] | None = None, max_comments: i
     """Queries YouTube Data API v3 to fetch comment threads for target videos."""
     yt_key = os.getenv("YOUTUBE_API_KEY")
     if not yt_key or "your_youtube_api" in yt_key or "AIzaSy" not in yt_key:
+        if is_database_configured():
+            logger.warning(
+                "YOUTUBE_API_KEY unconfigured while live database is active; skipping mock fallback."
+            )
+            return []
         logger.warning("YOUTUBE_API_KEY unconfigured or invalid. Running in mock mode.")
         return get_mock_comments()
 
@@ -156,6 +162,9 @@ def scrape_youtube_comments(video_urls: list[str] | None = None, max_comments: i
 
     logger.info("Retrieved %d comments via YouTube Data API.", len(comments_found))
     if not comments_found:
+        if is_database_configured():
+            logger.warning("No comments retrieved from API; skipping mock fallback for live database.")
+            return []
         logger.warning("No comments retrieved. Falling back to mock mode.")
         return get_mock_comments()
 
@@ -165,7 +174,7 @@ def scrape_youtube_comments(video_urls: list[str] | None = None, max_comments: i
 def get_mock_comments() -> list[dict]:
     """Generates deterministic mock comments for validation."""
     logger.info("Generating mock YouTube comments...")
-    return [
+    mock_items = [
         {
             "authorDisplayName": "Lil Shifty",
             "authorChannelUrl": "https://www.youtube.com/channel/UC_lilshifty_mock",
@@ -191,14 +200,23 @@ def get_mock_comments() -> list[dict]:
             "publishedAt": "2026-06-07T02:15:00Z"
         }
     ]
+    for item in mock_items:
+        item["_is_mock"] = True
+    return mock_items
 
 
 def filter_and_insert_comments(comments: list[dict]) -> int:
     """Filters comments using Gemini semantic classifier and enqueues qualified leads."""
     promo_count = 0
     inserted_count = 0
+    live_db = is_database_configured()
 
     for item in comments:
+        if live_db and (
+            item.get("_is_mock") or str(item.get("authorChannelUrl", "")).endswith("_mock")
+        ):
+            logger.warning("Skipping synthetic mock comment insertion while live database is configured.")
+            continue
         text = item.get("comment") or item.get("text", "")
         author_name = item.get("author") or item.get("authorDisplayName", "Unknown Author")
 
